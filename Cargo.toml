@@ -21,7 +21,7 @@ parquet = "57.0.0"
 rand = "0.9.2"
 rand_distr = "0.5.1"
 regex = "1.12.2"
-reqwest = "0.12.24"
+reqwest = { version = "0.12.24", features = ["rustls-tls"], default-features = false }
 serde = "1.0.228"
 serde_arrow = { version = "0.13.7", features = ["arrow-57"] }
 serde_json = "1.0.145"
