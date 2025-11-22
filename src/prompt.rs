@@ -1,8 +1,10 @@
+use log::warn;
 use rand;
 use rand::seq::SliceRandom;
 use rand_distr::{Distribution, Normal};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::sync::Once;
 
 pub fn sample_random_positive_int(mean: u32, stddev: u32, prompt_token_length: u32) -> u32 {
     if stddev == 0 {
@@ -16,7 +18,7 @@ pub fn sample_random_positive_int(mean: u32, stddev: u32, prompt_token_length: u
         let sample_f64 = normal.sample(&mut rng);
         let sample_u32 = sample_f64.round() as u32;
 
-        if sample_u32 > prompt_token_length {
+        if sample_u32 >= prompt_token_length {
             return sample_u32;
         }
     }
@@ -35,8 +37,23 @@ pub fn randomly_sample_sonnet_lines_prompt(
 
     let prompt_token_len = get_token_length(tokenizer, &prompt);
 
+    // Set a safe mean in the event a low mean was set with stddev, potentially creating an infinite loop
+    let safe_mean = std::cmp::max(prompt_tokens_mean, prompt_token_len);
+
+    if prompt_tokens_mean < prompt_token_len {
+        static WARN_ONCE: Once = Once::new();
+        WARN_ONCE.call_once(|| {
+            warn!(
+                "prompt_tokens_mean ({}) is less than base prompt length ({}). \
+                Adjusting mean to ({})\n\
+                This warning will only show once.",
+                prompt_tokens_mean, prompt_token_len, prompt_token_len
+            );
+        });
+    }
+
     let num_prompt_tokens =
-        sample_random_positive_int(prompt_tokens_mean, prompt_tokens_stddev, prompt_token_len);
+        sample_random_positive_int(safe_mean, prompt_tokens_stddev, prompt_token_len);
 
     let remaining_prompt_tokens = num_prompt_tokens - prompt_token_len;
 

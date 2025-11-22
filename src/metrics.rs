@@ -77,7 +77,7 @@ pub fn calculate_percentiles_f64(vec: &[f64]) -> DetailedStats<f64> {
     }
 }
 
-with_prefix!(itl "itl_");
+with_prefix!(itl "itl_ms_");
 with_prefix!(ttft "ttft_");
 with_prefix!(end_to_end_latency "end_to_end_latency_");
 with_prefix!(prefill_throughput_tps "prefill_throughput_tps_");
@@ -112,9 +112,9 @@ pub struct SummaryMetrics {
 }
 #[derive(Default, Serialize, Deserialize)]
 pub struct Metrics {
-    pub itl_mean: f64,
-    pub itl_stddev: f64,
-    pub itl_vec: Vec<f64>,
+    pub itl_ms_mean: f64,
+    pub itl_ms_stddev: f64,
+    pub itl_ms_vec: Vec<f64>,
     pub ttft_s: f64,
     pub end_to_end_latency_s: f64,
     pub number_input_tokens: u32,
@@ -188,7 +188,7 @@ impl SummaryBuilder {
     }
 
     fn add_metric(&mut self, metric: &Metrics) -> &mut Self {
-        self.itl_vec.extend_from_slice(&metric.itl_vec);
+        self.itl_vec.extend_from_slice(&metric.itl_ms_vec);
         self.add_ttft(metric.ttft_s);
         self.add_e2e_latency(metric.end_to_end_latency_s);
         self.add_prefill_throughput_tps(metric.prefill_throughput_tps);

@@ -28,7 +28,7 @@ pub async fn chat_completions(
         let mut decode_start = std::time::Instant::now();
         let mut final_time = std::time::Instant::now();
         let mut ttft: Option<Duration> = None;
-        let mut prev_token = std::time::Instant::now();
+        let mut prev_token: Option<std::time::Instant> = None;
         let mut itl: Vec<Duration> = Vec::new();
         let mut stream = built_client.stream();
         while let Some(event_result) = stream.next().await {
@@ -36,13 +36,6 @@ pub async fn chat_completions(
                 Ok(event) => match event {
                     SSE::Comment(_) => {}
                     SSE::Event(evt) => {
-                        if ttft.is_none() {
-                            ttft = Some(std::time::Instant::now() - prefill_start);
-                            decode_start = std::time::Instant::now();
-                        } else {
-                            itl.push(std::time::Instant::now() - prev_token);
-                        }
-                        prev_token = std::time::Instant::now();
                         // Check if this is the [DONE] message
                         if evt.data.trim() == "[DONE]" {
                             final_time = std::time::Instant::now();
@@ -54,6 +47,13 @@ pub async fn chat_completions(
                                 // Capture content if available
                                 if let Some(content) = &choice.delta.content {
                                     final_str.push_str(content);
+                                    if ttft.is_none() {
+                                        ttft = Some(prefill_start.elapsed());
+                                        decode_start = std::time::Instant::now();
+                                    } else if let Some(prev_time) = prev_token {
+                                        itl.push(prev_time.elapsed());
+                                    }
+                                    prev_token = Some(std::time::Instant::now());
                                 }
                                 // Capture finish reason if available (typically in final chunk)
                                 if choice.finish_reason.is_some() {
@@ -137,11 +137,11 @@ fn populate_metrics(
 
     // Calculate ITL statistics
     if !itl.is_empty() {
-        let itl_f64: Vec<f64> = itl.iter().map(|d| d.as_secs_f64()).collect();
+        let itl_f64: Vec<f64> = itl.iter().map(|d| d.as_secs_f64() * 1000.0).collect();
         let (mean, stddev) = calculate_stats(&itl_f64);
-        metrics.itl_mean = mean;
-        metrics.itl_stddev = stddev;
-        metrics.itl_vec = itl_f64;
+        metrics.itl_ms_mean = mean;
+        metrics.itl_ms_stddev = stddev;
+        metrics.itl_ms_vec = itl_f64;
     }
     metrics.response = response;
 }
