@@ -125,7 +125,6 @@ pub struct Metrics {
     pub prefill_throughput_tps: f64,
     pub error_msg: Option<String>,
     pub error_code: Option<u16>,
-    pub number_errors: u32,
     pub decode_throughput_tps: f64,
     pub response: String,
     pub finish_reason: Option<FinishReason>,
@@ -177,11 +176,9 @@ impl SummaryBuilder {
         self.output_tokens_vec.push(output_tokens)
     }
 
-    fn add_error_code(&mut self, error_code: Option<u16>) {
-        if let Some(error_code) = error_code {
-            *self.error_code_frequency.entry(error_code).or_insert(0) += 1;
-            self.number_errors += 1;
-        }
+    fn add_error_code(&mut self, error_code: u16) {
+        *self.error_code_frequency.entry(error_code).or_insert(0) += 1;
+        self.number_errors += 1;
     }
 
     fn add_finish_reason(&mut self, finish_reason: Option<FinishReason>) {
@@ -192,14 +189,19 @@ impl SummaryBuilder {
 
     fn add_metric(&mut self, metric: &Metrics) -> &mut Self {
         self.itl_vec.extend_from_slice(&metric.itl_ms_vec);
-        self.add_ttft(metric.ttft_s);
-        self.add_e2e_latency(metric.end_to_end_latency_s);
-        self.add_prefill_throughput_tps(metric.prefill_throughput_tps);
-        self.add_decode_throughput_tps(metric.decode_throughput_tps);
-        self.add_input_tokens(metric.number_input_tokens);
-        self.add_output_tokens(metric.number_output_tokens);
-        self.add_error_code(metric.error_code);
-        self.add_finish_reason(metric.finish_reason.clone());
+        if let Some(error_code) = metric.error_code {
+            self.add_error_code(error_code);
+        } else {
+            // Only add these if there is no error
+            self.add_ttft(metric.ttft_s);
+            self.add_e2e_latency(metric.end_to_end_latency_s);
+            self.add_prefill_throughput_tps(metric.prefill_throughput_tps);
+            self.add_decode_throughput_tps(metric.decode_throughput_tps);
+            self.add_input_tokens(metric.number_input_tokens);
+            self.add_output_tokens(metric.number_output_tokens);
+            self.add_finish_reason(metric.finish_reason.clone());
+        }
+
         self
     }
 

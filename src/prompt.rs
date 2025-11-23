@@ -36,7 +36,7 @@ pub fn randomly_sample_sonnet_lines_prompt(
         "Repeat lines indefinitely from the following text with {expect_output_tokens} output tokens. Don't generate eos tokens:\n\n"
     );
 
-    let prompt_encoding = tokenizer.encode(prompt_text.as_str(), false).unwrap();
+    let prompt_encoding = tokenizer.encode_fast(prompt_text.as_str(), false).unwrap();
     let prompt_ids = prompt_encoding.get_ids().to_vec();
     // Previousl
     let prompt_token_len = prompt_ids.len() as u32;
@@ -126,7 +126,7 @@ pub fn read_sonnet_file(
     let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
 
     let encodings = tokenizer
-        .encode_batch(line_refs, false)
+        .encode_batch_fast(line_refs, false)
         .map_err(|e| anyhow::anyhow!("Failed to encode batch: {}", e))?;
 
     let lines_with_encodings: Vec<(tokenizers::Encoding, u32)> = encodings
@@ -142,7 +142,7 @@ pub fn read_sonnet_file(
 #[allow(dead_code)]
 fn get_token_length(tokenizer: &tokenizers::Tokenizer, text: &str) -> u32 {
     tokenizer
-        .encode(text, true)
+        .encode_fast(text, true)
         .expect("Failed to get token length")
         .len() as u32
 }

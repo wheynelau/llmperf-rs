@@ -33,13 +33,14 @@ pub async fn chat_completions(
         static WARN_ONCE: Once = Once::new();
         let mut should_warn_usage_missing = true;
 
+        let mut stream = built_client.stream();
+
         let prefill_start = Instant::now();
         let mut decode_start = Instant::now();
         let mut final_time: Option<Instant> = None;
         let mut ttft: Option<Duration> = None;
         let mut prev_token: Option<Instant> = None;
         let mut itl: Vec<Duration> = Vec::new();
-        let mut stream = built_client.stream();
 
         // TODO: Tidy up or break into smaller functions
 
@@ -106,7 +107,6 @@ pub async fn chat_completions(
 
                     // Record error in metrics
                     metrics.error_msg = Some(e.to_string());
-                    metrics.number_errors += 1;
                     // Return Ok to continue the loop
                     return Err(e.into());
                 }

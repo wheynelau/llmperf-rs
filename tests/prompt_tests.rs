@@ -13,7 +13,7 @@ fn test_create_prompt_functional() {
     let lines: Vec<(tokenizers::Encoding, u32)> = raw_lines
         .iter()
         .map(|line| {
-            let encoding = tokenizer.encode(*line, false).unwrap();
+            let encoding = tokenizer.encode_fast(*line, false).unwrap();
             let len = encoding.len() as u32;
             (encoding, len)
         })
@@ -21,7 +21,7 @@ fn test_create_prompt_functional() {
 
     for target_tokens in [5, 10] {
         let (prompt, output_tokens) = create_prompt(Vec::new(), &lines, &tokenizer, target_tokens);
-        let actual_tokens = tokenizer.encode(prompt.as_str(), false).unwrap().len();
+        let actual_tokens = tokenizer.encode_fast(prompt.as_str(), false).unwrap().len();
 
         assert_eq!(actual_tokens as u32, output_tokens);
         assert_eq!(actual_tokens, target_tokens as usize);
@@ -46,11 +46,10 @@ fn test_randomly_sample_sonnet_lines_prompt_with_file() {
             randomly_sample_sonnet_lines_prompt(mean, stddev, mean, &tokenizer, &sonnet_lines);
 
         // The reason for encoding here to validate that encode(decode(ids)) may not be == ids
-        let actual_token_count = tokenizer.encode(prompt.as_str(), false).unwrap().len();
+        let actual_token_count = tokenizer.encode_fast(prompt.as_str(), false).unwrap().len();
 
         assert_eq!(actual_token_count, mean as usize);
         assert_eq!(returned_token_count, mean);
         assert!(prompt.contains("Repeat lines indefinitely"));
     }
 }
-

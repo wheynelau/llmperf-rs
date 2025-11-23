@@ -156,11 +156,23 @@ impl ResultsSaver {
     }
 }
 
-pub fn load_tokenizer(path: &str) -> Tokenizer {
+pub fn load_tokenizer(path: &str) -> Result<Tokenizer, Error> {
+    // Check if the path is a local file
+    if Path::new(path).exists() {
+        // Attempt to load from the local file and return immediately if successful.
+        // Convert the error type to `anyhow::Error` if loading fails.
+        // Return error for clarity, don't fallback to pretrained.
+        return Tokenizer::from_file(path).map_err(|e| {
+            anyhow::anyhow!("Failed to load tokenizer from local file '{}': {}", path, e)
+        });
+    }
+
+    // If the path does not exist locally, try to load from a pretrained source.
     let token = std::env::var("HF_TOKEN").ok();
     let params = FromPretrainedParameters {
         token,
         ..Default::default()
     };
-    Tokenizer::from_pretrained(path, Some(params)).unwrap()
+    Tokenizer::from_pretrained(path, Some(params))
+        .map_err(|e| anyhow::anyhow!("Failed to load tokenizer from '{}': {}", path, e))
 }

@@ -12,7 +12,12 @@ pub struct Cli {
     #[arg(long, required = true)]
     pub model: String,
 
-    #[arg(long, default_value = "hf-internal-testing/llama-tokenizer")]
+    /// The tokenizer used for calculating the number of input tokens.  
+    #[arg(
+        long,
+        default_value = "hf-internal-testing/llama-tokenizer",
+        long_help = "The tokenizer used for calculating the number of input tokens. The original llmperf code fixes this tokenizer, but you can pass in the path to a local tokenizer.json file or a model identifier from the huggingface hub."
+    )]
     pub tokenizer: String,
 
     /// The mean number of tokens to send in the prompt for the request.
@@ -23,9 +28,12 @@ pub struct Cli {
     #[arg(long, default_value = "150")]
     pub stddev_input_tokens: u32,
 
-    /// The mean number of tokens to generate from each llm request. This is the max_tokens param
-    /// for the completions API. Note that this is not always the number of tokens returned.
-    #[arg(long, default_value = "150")]
+    /// The mean number of tokens to generate from each llm request.
+    #[arg(
+        long,
+        default_value = "150",
+        long_help = "The mean number of tokens to generate from each llm request. This is the max_tokens param for the completions API. \nNote that this is not always the number of tokens returned."
+    )]
     pub mean_output_tokens: u32,
 
     /// The standard deviation on the number of tokens to generate per llm request.
@@ -40,9 +48,12 @@ pub struct Cli {
     #[arg(long, default_value = "90")]
     pub timeout: u64,
 
-    /// The number of requests to complete before finishing the test. Note that it's possible
-    /// for the test to timeout first.
-    #[arg(long, default_value = "10")]
+    /// The number of requests to complete before finishing the test.
+    #[arg(
+        long,
+        default_value = "10",
+        long_help = "The number of requests to complete before finishing the test. \nNote that it's possible for the test to timeout first."
+    )]
     pub max_num_completed_requests: u32,
 
     /// Additional sampling params to send with each request to the LLM API.
@@ -64,7 +75,12 @@ pub struct Cli {
     #[arg(long, default_value = "")]
     pub metadata: String,
 
-    /// Disable API endpoint connectivity check before running benchmark.
-    #[arg(long, default_value = "false", action = clap::ArgAction::SetTrue)]
+    /// Disable API sanity check before running benchmark.
+    #[arg(
+        long,
+        default_value = "false",
+        action = clap::ArgAction::SetTrue,
+        long_help = "Disable API sanity check before running benchmark.\n\nThis posts a GET request to the /models endpoint to ensure the API is reachable.\nIf your endpoint does not support this, you can disable this check."
+    )]
     pub no_check_endpoint: bool,
 }

@@ -1,14 +1,10 @@
-use anyhow::{Error, Result};
+use anyhow::Result;
 use clap::Parser;
 use futures::stream::{self, StreamExt};
 use indicatif::ProgressBar;
 use log::{error, info, warn};
 use token_benchmark::file::load_tokenizer;
 use tokio::time::{Duration, Instant, timeout};
-
-// Set up dhat global allocator for heap profiling
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
 
 // Import modules from lib.rs
 use token_benchmark::api;
@@ -19,13 +15,6 @@ use token_benchmark::prompt;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize dhat profiler if enabled
-    let _profiler = if std::env::var("DHAT_PROF").is_ok() {
-        Some(dhat::Profiler::new_heap())
-    } else {
-        None
-    };
-
     // Initialize logger with warn level by default
     env_logger::Builder::from_default_env()
         .filter_level(log::LevelFilter::Warn)
@@ -41,7 +30,7 @@ async fn main() -> Result<()> {
     }
 
     // Init the default tokenizer
-    let tokenizer = load_tokenizer(&config.tokenizer);
+    let tokenizer = load_tokenizer(&config.tokenizer)?;
 
     let mean_input_tokens: u32 = config.mean_input_tokens;
     let mean_output_tokens: u32 = config.mean_output_tokens;
@@ -124,11 +113,11 @@ async fn main() -> Result<()> {
                 metrics.number_output_tokens = output_tokens;
                 metrics.number_total_tokens =
                     metrics.number_input_tokens + metrics.number_output_tokens;
-                api::chat_completions(post_request, &mut metrics)
+                let result = api::chat_completions(post_request, &mut metrics)
                     .await
-                    .map_err(|e| anyhow::anyhow!("API error: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("API error: {}", e));
 
-                Ok::<metrics::Metrics, Error>(metrics)
+                (metrics, result)
             }
         })
         .buffered(config.num_concurrent_requests);
@@ -162,13 +151,14 @@ async fn main() -> Result<()> {
     match timeout(timeout_duration, async {
         while let Some(result) = stream.next().await {
             match result {
-                Ok(metrics) => {
+                (metrics, Ok(())) => {
                     completed_tasks += 1;
                     collected_metrics.push(metrics);
                 }
-                Err(e) => {
+                (metrics, Err(e)) => {
                     failed_tasks += 1;
                     error!("Task failed: {}", e);
+                    collected_metrics.push(metrics);
                 }
             }
             pb.inc(1);
