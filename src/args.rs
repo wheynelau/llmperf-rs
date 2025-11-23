@@ -46,16 +46,16 @@ pub struct Cli {
     pub max_num_completed_requests: u32,
 
     /// Additional sampling params to send with each request to the LLM API.
-    /// (default: {}) No additional sampling params are sent.
+    /// No additional sampling params are sent.
     /// Currently not in use.
     #[arg(long, default_value = "{}")]
     pub additional_sampling_params: String,
 
-    /// The directory to save the results to. (default: "") No results are saved.
+    /// The directory to save the results to. If not specified, results are not saved.
     #[arg(long)]
     pub results_dir: Option<String>,
 
-    /// The name of the llm api to use. Can select from supported APIs.
+    /// The name of the llm api to use. Can select from supported APIs. Only supports `openai` now.
     #[arg(long, default_value = "openai")]
     pub llm_api: String,
 
