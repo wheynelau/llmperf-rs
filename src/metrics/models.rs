@@ -1,7 +1,9 @@
-use crate::models::FinishReason;
+use super::utils::calculate_percentiles_f64;
+use crate::api::models::FinishReason;
+use crate::args::Cli;
 use serde::{Deserialize, Serialize};
 use serde_with::with_prefix;
-use statrs::statistics::{Data, Distribution, Max, Min, OrderStatistics, Statistics};
+use statrs::statistics::{Data, Distribution, OrderStatistics};
 
 #[derive(Default, Serialize, Debug)]
 pub struct DetailedStats<T> {
@@ -17,13 +19,33 @@ pub struct DetailedStats<T> {
     max: T,
 }
 
-pub fn calculate_stats(itl_vec: &[f64]) -> (f64, f64) {
-    // Data::new requires an owned container that implements AsMut<[f64]>, so convert the slice to a Vec
-    let data = Data::new(itl_vec.to_vec());
-    //
-    let mean = data.mean().expect("NAN should not appear in itl");
-    let stddev = itl_vec.std_dev();
-    (mean, stddev)
+impl<T> DetailedStats<T> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        quantiles_p25: f64,
+        quantiles_p50: f64,
+        quantiles_p75: f64,
+        quantiles_p90: f64,
+        quantiles_p95: f64,
+        quantiles_p99: f64,
+        mean: f64,
+        median: f64,
+        min: T,
+        max: T,
+    ) -> Self {
+        Self {
+            quantiles_p25,
+            quantiles_p50,
+            quantiles_p75,
+            quantiles_p90,
+            quantiles_p95,
+            quantiles_p99,
+            mean,
+            median,
+            min,
+            max,
+        }
+    }
 }
 
 pub fn calculate_percentiles_ord<T>(vec: &[T]) -> DetailedStats<T>
@@ -42,39 +64,18 @@ where
     let float_vec: Vec<f64> = vec.iter().map(|&x| x.into()).collect();
     let mut data = Data::new(float_vec);
 
-    DetailedStats {
-        quantiles_p25: data.percentile(25),
-        quantiles_p50: data.percentile(50),
-        quantiles_p75: data.percentile(75),
-        quantiles_p90: data.percentile(90),
-        quantiles_p95: data.percentile(95),
-        quantiles_p99: data.percentile(99),
-        mean: data.mean().unwrap_or(0.0),
-        median: data.median(),
+    DetailedStats::new(
+        data.percentile(25),
+        data.percentile(50),
+        data.percentile(75),
+        data.percentile(90),
+        data.percentile(95),
+        data.percentile(99),
+        data.mean().unwrap_or(0.0),
+        data.median(),
         min,
         max,
-    }
-}
-
-pub fn calculate_percentiles_f64(vec: &[f64]) -> DetailedStats<f64> {
-    if vec.is_empty() {
-        return DetailedStats::default();
-    }
-
-    let mut data = Data::new(vec.to_vec());
-
-    DetailedStats {
-        quantiles_p25: data.percentile(25),
-        quantiles_p50: data.percentile(50),
-        quantiles_p75: data.percentile(75),
-        quantiles_p90: data.percentile(90),
-        quantiles_p95: data.percentile(95),
-        quantiles_p99: data.percentile(99),
-        mean: data.mean().unwrap_or(0.0),
-        median: data.median(),
-        min: data.min(),
-        max: data.max(),
-    }
+    )
 }
 
 with_prefix!(itl "itl_ms_");
@@ -109,6 +110,7 @@ pub struct SummaryMetrics {
     pub num_completed_requests_per_min: f64,
     pub error_rate: f64,
     pub timestamp: u64,
+    pub args: Cli,
 }
 #[derive(Default, Serialize, Deserialize)]
 pub struct Metrics {
@@ -144,6 +146,7 @@ pub struct SummaryBuilder {
     num_requests_started: u32,
     num_completed_requests: u32,
     total_time_seconds: f64,
+    args: Cli,
 }
 
 impl SummaryBuilder {
@@ -220,6 +223,10 @@ impl SummaryBuilder {
         self.num_completed_requests = num_completed_requests;
         self
     }
+    pub fn args(&mut self, args: Cli) -> &mut Self {
+        self.args = args;
+        self
+    }
 
     pub fn build(mut self) -> SummaryMetrics {
         let num_completed_requests_per_min = if self.total_time_seconds > 0.0 {
@@ -253,6 +260,7 @@ impl SummaryBuilder {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
+            args: self.args,
         }
     }
 }

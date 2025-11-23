@@ -1,16 +1,23 @@
 use eventsource_client::{Client, SSE};
 use futures::StreamExt;
-use log::{error, info};
-use std::{error::Error, time::Duration};
+use log::{info, warn};
+use std::{error::Error, sync::Once};
+use tokio::time::{Duration, Instant};
 
-use crate::metrics::{Metrics, calculate_stats};
-use crate::models::{Request, StreamResponse};
+use super::models::{Request, StreamResponse};
+use crate::metrics::{
+    models::Metrics,
+    utils::{calculate_decode_tps, calculate_prefill_tps, populate_metrics},
+};
 
 pub async fn chat_completions(
     request: Request,
     metrics: &mut Metrics,
 ) -> Result<(), Box<dyn Error>> {
-    let mut final_str = String::new();
+    // Tiny performance optimization
+    // 5 is just an estimate
+    let mut final_str = String::with_capacity((request.chat_completion.max_tokens * 5) as usize);
+
     if request.chat_completion.stream {
         let mut client = eventsource_client::ClientBuilder::for_url(&request.url)?
             .method("POST".to_string())
@@ -23,14 +30,19 @@ pub async fn chat_completions(
         let built_client = client.build();
 
         // Init the variables
+        static WARN_ONCE: Once = Once::new();
+        let mut should_warn_usage_missing = true;
 
-        let prefill_start = std::time::Instant::now();
-        let mut decode_start = std::time::Instant::now();
-        let mut final_time = std::time::Instant::now();
+        let prefill_start = Instant::now();
+        let mut decode_start = Instant::now();
+        let mut final_time: Option<Instant> = None;
         let mut ttft: Option<Duration> = None;
-        let mut prev_token: Option<std::time::Instant> = None;
+        let mut prev_token: Option<Instant> = None;
         let mut itl: Vec<Duration> = Vec::new();
         let mut stream = built_client.stream();
+
+        // TODO: Tidy up or break into smaller functions
+
         while let Some(event_result) = stream.next().await {
             match event_result {
                 Ok(event) => match event {
@@ -38,7 +50,10 @@ pub async fn chat_completions(
                     SSE::Event(evt) => {
                         // Check if this is the [DONE] message
                         if evt.data.trim() == "[DONE]" {
-                            final_time = std::time::Instant::now();
+                            if final_time.is_none() {
+                                // Record final time in case it wasn't set
+                                final_time = Some(Instant::now());
+                            }
                             break;
                         }
 
@@ -47,32 +62,37 @@ pub async fn chat_completions(
                                 // Capture content if available
                                 if let Some(content) = &choice.delta.content {
                                     final_str.push_str(content);
+                                    // First token, set the TTFT
                                     if ttft.is_none() {
                                         ttft = Some(prefill_start.elapsed());
-                                        decode_start = std::time::Instant::now();
+                                        decode_start = Instant::now();
                                     } else if let Some(prev_time) = prev_token {
+                                        // This branch handles the ITL
                                         itl.push(prev_time.elapsed());
                                     }
-                                    prev_token = Some(std::time::Instant::now());
+                                    // Set the previous token time
+                                    prev_token = Some(Instant::now());
                                 }
                                 // Capture finish reason if available (typically in final chunk)
                                 if choice.finish_reason.is_some() {
                                     metrics.finish_reason = choice.finish_reason.clone();
+                                    final_time = Some(Instant::now());
                                 }
                             }
                             // Check if usage is provided, some endpoints will send their usage.
                             if let Some(usage) = response.usage {
-                                // Should we replace the input?
-                                // TODO: We could include a REAL INPUT TOKEN COUNT
+                                metrics.number_input_tokens = usage.prompt_tokens;
                                 metrics.number_output_tokens = usage.completion_tokens;
                                 metrics.number_total_tokens = usage.total_tokens;
+                                should_warn_usage_missing = false;
                             }
                         }
                     }
                     SSE::Connected(_) => {}
                 },
                 Err(e) => {
-                    error!("Stream error: {}", e);
+                    // Lower the log level as the error will be reported in the metrics
+                    info!("Stream error: {}", e);
 
                     // Extract status code if it's an HTTP response error
                     match &e {
@@ -87,10 +107,17 @@ pub async fn chat_completions(
                     // Record error in metrics
                     metrics.error_msg = Some(e.to_string());
                     metrics.number_errors += 1;
-                    break;
+                    // Return Ok to continue the loop
+                    return Err(e.into());
                 }
             }
         }
+        let final_time = final_time.unwrap();
+        if should_warn_usage_missing {
+            WARN_ONCE.call_once(|| {
+                warn!("Usage stats not provided by endpoint, using input stats. Results may vary");
+            });
+        };
 
         metrics.prefill_throughput_tps =
             calculate_prefill_tps(prefill_start, decode_start, metrics.number_input_tokens);
@@ -100,50 +127,6 @@ pub async fn chat_completions(
         populate_metrics(metrics, prefill_start, ttft, itl, final_str);
     }
     Ok(())
-}
-
-fn calculate_prefill_tps(
-    prefill_start: std::time::Instant,
-    decode_start: std::time::Instant,
-    input_tokens: u32,
-) -> f64 {
-    let time = decode_start.duration_since(prefill_start);
-    input_tokens as f64 / time.as_secs_f64()
-}
-
-fn calculate_decode_tps(
-    decode_start: std::time::Instant,
-    final_time: std::time::Instant,
-    output_tokens: u32,
-) -> f64 {
-    let time = final_time.duration_since(decode_start);
-    output_tokens as f64 / time.as_secs_f64()
-}
-fn populate_metrics(
-    metrics: &mut Metrics,
-    prefill_start: std::time::Instant,
-    ttft: Option<std::time::Duration>,
-    itl: Vec<std::time::Duration>,
-    response: String,
-) {
-    // Populate metrics at the end of streaming
-    let total_time = prefill_start.elapsed();
-    metrics.end_to_end_latency_s = total_time.as_secs_f64();
-
-    // Set TTFT if we got a first token
-    if let Some(ttft_duration) = ttft {
-        metrics.ttft_s = ttft_duration.as_secs_f64();
-    }
-
-    // Calculate ITL statistics
-    if !itl.is_empty() {
-        let itl_f64: Vec<f64> = itl.iter().map(|d| d.as_secs_f64() * 1000.0).collect();
-        let (mean, stddev) = calculate_stats(&itl_f64);
-        metrics.itl_ms_mean = mean;
-        metrics.itl_ms_stddev = stddev;
-        metrics.itl_ms_vec = itl_f64;
-    }
-    metrics.response = response;
 }
 
 /// Check API endpoint connectivity by making a GET request to /models endpoint

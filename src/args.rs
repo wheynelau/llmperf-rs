@@ -1,6 +1,7 @@
 use clap::Parser;
+use serde::Serialize;
 
-#[derive(Parser)]
+#[derive(Parser, Default, Serialize, Debug)]
 #[command(
     version,
     about = "Run a token throughput and latency benchmark.",
@@ -10,6 +11,9 @@ pub struct Cli {
     /// The model to use for this load test.
     #[arg(long, required = true)]
     pub model: String,
+
+    #[arg(long, default_value = "hf-internal-testing/llama-tokenizer")]
+    pub tokenizer: String,
 
     /// The mean number of tokens to send in the prompt for the request.
     #[arg(long, default_value = "550")]
@@ -32,7 +36,7 @@ pub struct Cli {
     #[arg(long, default_value = "10")]
     pub num_concurrent_requests: usize,
 
-    /// The amount of time to run the load test for.
+    /// The hard timeout for the test in seconds.
     #[arg(long, default_value = "90")]
     pub timeout: u64,
 
@@ -43,6 +47,7 @@ pub struct Cli {
 
     /// Additional sampling params to send with each request to the LLM API.
     /// (default: {}) No additional sampling params are sent.
+    /// Currently not in use.
     #[arg(long, default_value = "{}")]
     pub additional_sampling_params: String,
 
@@ -60,6 +65,6 @@ pub struct Cli {
     pub metadata: String,
 
     /// Disable API endpoint connectivity check before running benchmark.
-    #[arg(long = "no-check-endpoint", default_value = "false", action = clap::ArgAction::SetTrue)]
+    #[arg(long, default_value = "false", action = clap::ArgAction::SetTrue)]
     pub no_check_endpoint: bool,
 }

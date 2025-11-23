@@ -33,7 +33,6 @@ pub struct StreamChoice {
 
 #[derive(Deserialize, Debug)]
 pub struct StreamDelta {
-    // Option because 'content' might be missing in some chunks (e.g. role-only chunks)
     pub content: Option<String>,
     pub reasoning_content: Option<serde_json::Value>,
 }
@@ -84,11 +83,14 @@ impl ChatCompletionRequest {
         stream: bool,
     ) -> Self {
         let prompt = prompt.into();
+        // Original llmperf code had the system message, but it doesn't seem to be necessary
+        // Might be a legacy thing
+        // Could add as a config option
         let messages = vec![
-            Message {
-                role: "system".to_string(),
-                content: "".to_string(),
-            },
+            // Message {
+            //     role: "system".to_string(),
+            //     content: "".to_string(),
+            // },
             Message {
                 role: "user".to_string(),
                 content: prompt,

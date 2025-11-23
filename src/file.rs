@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use tokenizers::{FromPretrainedParameters, Tokenizer};
 
 use arrow::datatypes::FieldRef;
 use parquet::{
@@ -136,21 +137,30 @@ impl ResultsSaver {
         let summary_json = serde_json::to_string_pretty(&summary_with_metadata)?;
         fs::write(summary_path, summary_json)?;
 
+        // Deprecated but kept here for reference
+        // Depending on the runs, the space required can be up to 5x the parquet size
         // Save individual responses to JSON file
-        let responses_path = results_path.join(format!("{}.json", individual_responses_filename));
-        let responses_json = serde_json::to_string_pretty(&individual_responses)?;
-        fs::write(responses_path, responses_json)?;
+        // let responses_path = results_path.join(format!("{}.json", individual_responses_filename));
+        // let responses_json = serde_json::to_string_pretty(&individual_responses)?;
+        // fs::write(responses_path, responses_json)?;
 
-        // Experimental, parquet
         let parquet_path = results_path.join(format!("{}.parquet", individual_responses_filename));
 
         self.save_metrics_arrow(individual_responses, &parquet_path)?;
 
         info!("Results saved to {}/", results_path.display());
         info!("  - {}.json", summary_filename);
-        info!("  - {}.json", individual_responses_filename);
         info!("  - {}.parquet", individual_responses_filename);
 
         Ok(())
     }
+}
+
+pub fn load_tokenizer(path: &str) -> Tokenizer {
+    let token = std::env::var("HF_TOKEN").ok();
+    let params = FromPretrainedParameters {
+        token,
+        ..Default::default()
+    };
+    Tokenizer::from_pretrained(path, Some(params)).unwrap()
 }

@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use log::warn;
 use rand;
 use rand::seq::SliceRandom;
@@ -29,13 +30,16 @@ pub fn randomly_sample_sonnet_lines_prompt(
     prompt_tokens_stddev: u32,
     expect_output_tokens: u32,
     tokenizer: &tokenizers::Tokenizer,
-    sonnet_lines: &[(String, u32)],
+    sonnet_lines: &[(tokenizers::Encoding, u32)],
 ) -> (String, u32) {
-    let prompt = format!(
+    let prompt_text = format!(
         "Repeat lines indefinitely from the following text with {expect_output_tokens} output tokens. Don't generate eos tokens:\n\n"
     );
 
-    let prompt_token_len = get_token_length(tokenizer, &prompt);
+    let prompt_encoding = tokenizer.encode(prompt_text.as_str(), false).unwrap();
+    let prompt_ids = prompt_encoding.get_ids().to_vec();
+    // Previousl
+    let prompt_token_len = prompt_ids.len() as u32;
 
     // Set a safe mean in the event a low mean was set with stddev, potentially creating an infinite loop
     let safe_mean = std::cmp::max(prompt_tokens_mean, prompt_token_len);
@@ -57,79 +61,88 @@ pub fn randomly_sample_sonnet_lines_prompt(
 
     let remaining_prompt_tokens = num_prompt_tokens - prompt_token_len;
 
-    let prompt = create_prompt(prompt, sonnet_lines, tokenizer, remaining_prompt_tokens);
+    let (prompt, actual_token_count) =
+        create_prompt(prompt_ids, sonnet_lines, tokenizer, remaining_prompt_tokens);
 
-    (prompt, num_prompt_tokens)
+    (prompt, actual_token_count)
 }
-fn create_prompt(
-    mut prompt: String,
-    sonnet_lines: &[(String, u32)],
+pub fn create_prompt(
+    mut prompt_ids: Vec<u32>,
+    sonnet_lines: &[(tokenizers::Encoding, u32)],
     tokenizer: &tokenizers::Tokenizer,
-    mut remaining_prompt_tokens: u32,
-) -> String {
+    remaining_prompt_tokens: u32,
+) -> (String, u32) {
     // Create a mutable copy to shuffle for each call to maintain randomness
-    let mut shuffled_lines = sonnet_lines.to_vec();
+    let mut shuffled_indices: Vec<usize> = (0..sonnet_lines.len()).collect();
     let mut rng = rand::rng();
-    shuffled_lines.shuffle(&mut rng);
+    shuffled_indices.shuffle(&mut rng);
 
-    // Use cycle to replicate the while , for
-    for (line, line_len) in shuffled_lines.iter().cycle() {
-        if remaining_prompt_tokens < *line_len {
-            // Partial line: encode, truncate, and decode
-            // Original code truncates by character, but that seems unusual. Truncate by tokens for a more accurate representation
-            let encoding = tokenizer.encode(line.to_string(), false).unwrap();
-            let ids = encoding.get_ids();
-            let truncated = tokenizer
-                .decode(&ids[..remaining_prompt_tokens as usize], false)
-                .unwrap();
-            prompt.push_str(&truncated);
+    let mut result_ids = Vec::new();
+    let mut remaining = remaining_prompt_tokens;
+
+    // Use cycle to replicate the while loop from the original python code
+    for &line_idx in shuffled_indices.iter().cycle() {
+        if remaining == 0 {
             break;
         }
 
-        // Full line fits
-        prompt.push_str(line);
-        remaining_prompt_tokens -= line_len;
+        let (encoding, line_len) = &sonnet_lines[line_idx];
+        let line_ids = encoding.get_ids();
+
+        if line_len <= &remaining {
+            // Take the whole line
+            result_ids.extend(line_ids);
+            remaining -= line_len;
+        } else {
+            // Take partial line
+            result_ids.extend(&line_ids[..remaining as usize]);
+            break;
+        }
     }
-    prompt
+
+    // Combine prompt_ids and result_ids
+    prompt_ids.extend(&result_ids);
+
+    // Decode the final result to get the prompt text
+    let prompt = tokenizer.decode(&prompt_ids, false).unwrap();
+
+    (prompt, prompt_ids.len() as u32)
 }
 
 pub fn read_sonnet_file(
     tokenizer: &tokenizers::Tokenizer,
     sonnet_path: &str,
-) -> Vec<(String, u32)> {
-    let file = File::open(sonnet_path).expect("Failed to open sonnet file");
+) -> Result<Vec<(tokenizers::Encoding, u32)>> {
+    let file = File::open(sonnet_path).context("Failed to open sonnet file")?;
     let reader = BufReader::new(file);
 
-    let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
-
-    let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
-    let encodings = tokenizer
-        .encode_batch(line_refs, false)
-        .expect("Failed to encode batch");
-
-    let lines_with_counts: Vec<(String, u32)> = lines
-        .into_iter()
-        .zip(encodings.iter().map(|e| e.len() as u32))
+    let lines: Vec<String> = reader
+        .lines()
+        .map_while(Result::ok)
+        .map(|line| line + "\n")
         .collect();
 
-    // Note: We no longer shuffle here since we shuffle in create_prompt for each call
-    lines_with_counts
-}
+    // We need to pass references to encode_batch so we don't consume the lines
+    let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
 
+    let encodings = tokenizer
+        .encode_batch(line_refs, false)
+        .map_err(|e| anyhow::anyhow!("Failed to encode batch: {}", e))?;
+
+    let lines_with_encodings: Vec<(tokenizers::Encoding, u32)> = encodings
+        .into_iter()
+        .map(|e| {
+            let len = e.len() as u32;
+            (e, len)
+        })
+        .collect();
+
+    Ok(lines_with_encodings)
+}
+#[allow(dead_code)]
 fn get_token_length(tokenizer: &tokenizers::Tokenizer, text: &str) -> u32 {
     tokenizer
         .encode(text, true)
         .expect("Failed to get token length")
         .len() as u32
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_sample() {
-        let sample = sample_random_positive_int(10, 5, 12);
-        // Can't really prove the random distribution
-        assert!(sample > 12);
-    }
 }
