@@ -87,7 +87,7 @@ rather than end of stream.
 
 Prefill Throughput is the number of tokens processed per second during the prefill phase.  
 
-$\frac{\mathrm{number\_input\_tokens}}{\mathrm{ttft}}$  
+$`\frac{\mathrm{number\_input\_tokens}}{\mathrm{ttft}}`$
 
 This explains why the correct input tokens are needed.  
 
@@ -95,7 +95,8 @@ This explains why the correct input tokens are needed.
 
 Decode Throughput is the number of tokens processed per second during the decode phase.  
 
-$\frac{\mathrm{number\_output\_tokens}}{\mathrm{final\_time - decode\_start\_time}}$
+$`\frac{\mathrm{number\_output\_tokens}}{\mathrm{final\_time} - \mathrm{decode\_start\_time}}`$
+
 
 ### Finish Reason
 
