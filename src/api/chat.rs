@@ -13,6 +13,7 @@ use crate::metrics::{
 pub async fn chat_completions(
     request: Request,
     metrics: &mut Metrics,
+    api_timeout: &Duration,
 ) -> Result<(), Box<dyn Error>> {
     // Tiny performance optimization
     // 5 is just an estimate
@@ -21,7 +22,10 @@ pub async fn chat_completions(
     if request.chat_completion.stream {
         let mut client = eventsource_client::ClientBuilder::for_url(&request.url)?
             .method("POST".to_string())
-            .header("Content-Type", "application/json")?;
+            .header("Content-Type", "application/json")?
+            .connect_timeout(*api_timeout)
+            .read_timeout(*api_timeout)
+            .write_timeout(*api_timeout);
         if let Some(api_key) = request.api_key {
             client = client.header("Authorization", &format!("Bearer {}", api_key))?;
         }
@@ -36,8 +40,6 @@ pub async fn chat_completions(
         let mut stream = built_client.stream();
 
         let prefill_start = Instant::now();
-        let mut decode_start = Instant::now();
-        let mut final_time: Option<Instant> = None;
         let mut ttft: Option<Duration> = None;
         let mut prev_token: Option<Instant> = None;
         let mut itl: Vec<Duration> = Vec::new();
@@ -51,10 +53,6 @@ pub async fn chat_completions(
                     SSE::Event(evt) => {
                         // Check if this is the [DONE] message
                         if evt.data.trim() == "[DONE]" {
-                            if final_time.is_none() {
-                                // Record final time in case it wasn't set
-                                final_time = Some(Instant::now());
-                            }
                             break;
                         }
 
@@ -66,7 +64,6 @@ pub async fn chat_completions(
                                     // First token, set the TTFT
                                     if ttft.is_none() {
                                         ttft = Some(prefill_start.elapsed());
-                                        decode_start = Instant::now();
                                     } else if let Some(prev_time) = prev_token {
                                         // This branch handles the ITL
                                         itl.push(prev_time.elapsed());
@@ -77,7 +74,6 @@ pub async fn chat_completions(
                                 // Capture finish reason if available (typically in final chunk)
                                 if choice.finish_reason.is_some() {
                                     metrics.finish_reason = choice.finish_reason.clone();
-                                    final_time = Some(Instant::now());
                                 }
                             }
                             // Check if usage is provided, some endpoints will send their usage.
@@ -112,19 +108,18 @@ pub async fn chat_completions(
                 }
             }
         }
-        let final_time = final_time.unwrap();
         if should_warn_usage_missing {
             WARN_ONCE.call_once(|| {
                 warn!("Usage stats not provided by endpoint, using input stats. Results may vary");
             });
         };
+        let e2e_time = prefill_start.elapsed();
 
-        metrics.prefill_throughput_tps =
-            calculate_prefill_tps(prefill_start, decode_start, metrics.number_input_tokens);
-        metrics.decode_throughput_tps =
-            calculate_decode_tps(decode_start, final_time, metrics.number_output_tokens);
+        metrics.prefill_throughput_tps = calculate_prefill_tps(&ttft, metrics.number_input_tokens);
+        metrics.decode_throughput_tps = calculate_decode_tps(&itl);
+        metrics.end_to_end_latency_s = e2e_time.as_secs_f64();
 
-        populate_metrics(metrics, prefill_start, ttft, itl, final_str);
+        populate_metrics(metrics, ttft, itl, final_str);
     }
     Ok(())
 }

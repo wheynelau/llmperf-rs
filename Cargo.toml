@@ -1,6 +1,6 @@
 [package]
 name = "llmperf"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 repository = "https://github.com/wheynelau/llmperf-rs"
 
@@ -29,6 +29,10 @@ serde_with = "3.16.0"
 statrs = "0.18.0"
 tokenizers = { version = "0.22.1", features = ["esaxx_fast", "hf-hub", "http", "rustls-tls"] }
 tokio = { version = "1.48.0", features = ["full"] }
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio-test = "0.4"
 
 # The profile that 'dist' will build with
 [profile.dist]

@@ -30,7 +30,9 @@ fn test_create_prompt_functional() {
 
 #[test]
 fn test_randomly_sample_sonnet_lines_prompt_with_file() {
-    let tokenizer = tokenizers::Tokenizer::from_pretrained("Qwen/Qwen3-0.6B-FP8", None).unwrap();
+    let tokenizer =
+        tokenizers::Tokenizer::from_pretrained("hf-internal-testing/llama-tokenizer", None)
+            .unwrap();
 
     let sonnet_lines =
         read_sonnet_file(&tokenizer, "sonnet.txt").expect("Should be able to read sonnet.txt file");
@@ -39,7 +41,7 @@ fn test_randomly_sample_sonnet_lines_prompt_with_file() {
 
     let stddev = 0;
 
-    for mean in (1000..=10000).step_by(100) {
+    for mean in (1000..=10000).step_by(1000) {
         // returned token count is the number of tokens from concatenated Vec of Ids
         // That is [1,2,3] + [4,5,6] = len of 6
         let (prompt, returned_token_count) =

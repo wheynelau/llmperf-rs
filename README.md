@@ -42,9 +42,23 @@ llmperf --help
 Basic usage with a specified model:
 
 ```bash
-export OPENAI_API_BASE=http://localhost:8000/v1 # vLLM endpoints
-export OPENAI_API_KEY=sk-secret-key
+export OPENAI_API_BASE=http://localhost:8000/v1 # vLLM endpoint
 llmperf --model gpt-3.5-turbo
+```
+
+### Environment variables
+
+```bash
+# default is warn
+export RUST_LOG=INFO # Set log level, DEBUG, INFO, WARN, ERROR
+# Default to 600 seconds, this is the timeout per request
+export OPENAI_API_TIMEOUT=600 
+# Base URL, throws an error if unset
+export OPENAI_API_BASE=http://localhost:8000/v1
+# API key, optional
+export OPENAI_API_KEY=sk-secret-key
+# HF_TOKEN, optional, for downloading private tokenizers
+export HF_TOKEN=hf-abc123
 ```
 
 ## Additional details

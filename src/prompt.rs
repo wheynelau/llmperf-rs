@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use futures::Stream;
+use futures::stream::{self, StreamExt};
 use log::warn;
 use rand;
 use rand::seq::SliceRandom;
@@ -6,6 +8,10 @@ use rand_distr::{Distribution, Normal};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::Once;
+
+use crate::api;
+use crate::config::AppConfig;
+use crate::metrics::{self, Metrics};
 
 pub fn sample_random_positive_int(mean: u32, stddev: u32, prompt_token_length: u32) -> u32 {
     if stddev == 0 {
@@ -145,4 +151,67 @@ fn get_token_length(tokenizer: &tokenizers::Tokenizer, text: &str) -> u32 {
         .encode_fast(text, true)
         .expect("Failed to get token length")
         .len() as u32
+}
+
+pub fn create_inputs(
+    sonnet_lines: &[(tokenizers::Encoding, u32)],
+    app_config: &AppConfig,
+) -> Vec<(String, u32, u32)> {
+    (0..app_config.cli_config.max_num_completed_requests)
+        .map(|_| {
+            let output_tokens = sample_random_positive_int(
+                app_config.cli_config.mean_output_tokens,
+                app_config.cli_config.stddev_output_tokens,
+                0,
+            );
+            let (prompt, prompt_tokens) = randomly_sample_sonnet_lines_prompt(
+                app_config.cli_config.mean_input_tokens,
+                app_config.cli_config.stddev_input_tokens,
+                output_tokens,
+                &app_config.tokenizer,
+                sonnet_lines,
+            );
+            (prompt, output_tokens, prompt_tokens)
+        })
+        .collect()
+}
+// Builds the stream of tasks
+pub fn create_tasks(
+    inputs: Vec<(String, u32, u32)>,
+    app_config: &AppConfig,
+) -> impl Stream<Item = (Metrics, Result<(), anyhow::Error>)> + use<> {
+    let api_base = app_config.api_base.clone();
+    let api_key = app_config.api_key.clone();
+    let model = app_config.model.clone();
+    let api_timeout = app_config.api_timeout;
+    let num_concurrent_requests = app_config.cli_config.num_concurrent_requests;
+
+    stream::iter(inputs)
+        .map(move |(prompt, output_tokens, prompt_tokens)| {
+            let url = api_base.clone();
+            let api_key = api_key.clone();
+            let model = model.clone();
+            async move {
+                // Perform the HTTP GET request
+                let completion = api::models::ChatCompletionRequest::from_prompt(
+                    model,
+                    prompt,
+                    output_tokens,
+                    true,
+                );
+                let post_request = api::models::Request::new(&url, api_key, completion);
+                let mut metrics = metrics::Metrics::default();
+                // Populate the variables we already know
+                metrics.number_input_tokens = prompt_tokens;
+                metrics.number_output_tokens = output_tokens;
+                metrics.number_total_tokens =
+                    metrics.number_input_tokens + metrics.number_output_tokens;
+                let result = api::chat_completions(post_request, &mut metrics, &api_timeout)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("API error: {}", e));
+
+                (metrics, result)
+            }
+        })
+        .buffered(num_concurrent_requests)
 }

@@ -1,31 +1,29 @@
 use super::models::{DetailedStats, Metrics};
 use statrs::statistics::{Data, Distribution, Max, Min, OrderStatistics, Statistics};
-use tokio::time::{Duration, Instant};
+use tokio::time::Duration;
 
-pub fn calculate_prefill_tps(
-    prefill_start: Instant,
-    decode_start: Instant,
-    input_tokens: u32,
-) -> f64 {
-    let time = decode_start.duration_since(prefill_start);
-    input_tokens as f64 / time.as_secs_f64()
+pub fn calculate_prefill_tps(ttft: &Option<Duration>, input_tokens: u32) -> f64 {
+    if let Some(ttft_duration) = ttft {
+        input_tokens as f64 / ttft_duration.as_secs_f64()
+    } else {
+        0.0
+    }
 }
 
-pub fn calculate_decode_tps(decode_start: Instant, final_time: Instant, output_tokens: u32) -> f64 {
-    let time = final_time.duration_since(decode_start);
-    output_tokens as f64 / time.as_secs_f64()
+pub fn calculate_decode_tps(itl: &[Duration]) -> f64 {
+    // Don't need the output tokens, just the ITL
+    if itl.is_empty() {
+        return 0.0;
+    }
+    let total_time = itl.iter().sum::<Duration>().as_secs_f64();
+    itl.len() as f64 / total_time
 }
 pub fn populate_metrics(
     metrics: &mut Metrics,
-    prefill_start: Instant,
     ttft: Option<Duration>,
     itl: Vec<Duration>,
     response: String,
 ) {
-    // Populate metrics at the end of streaming
-    let total_time = prefill_start.elapsed();
-    metrics.end_to_end_latency_s = total_time.as_secs_f64();
-
     // Set TTFT if we got a first token
     if let Some(ttft_duration) = ttft {
         metrics.ttft_s = ttft_duration.as_secs_f64();
@@ -67,6 +65,7 @@ pub fn calculate_percentiles_f64(vec: &[f64]) -> DetailedStats<f64> {
         data.percentile(99),
         data.mean().unwrap_or(0.0),
         data.median(),
+        data.std_dev().unwrap_or(0.0),
         data.min(),
         data.max(),
     )

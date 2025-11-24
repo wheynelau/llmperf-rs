@@ -7,16 +7,17 @@ use statrs::statistics::{Data, Distribution, OrderStatistics};
 
 #[derive(Default, Serialize, Debug)]
 pub struct DetailedStats<T> {
-    quantiles_p25: f64,
-    quantiles_p50: f64,
-    quantiles_p75: f64,
-    quantiles_p90: f64,
-    quantiles_p95: f64,
-    quantiles_p99: f64,
-    mean: f64,
-    median: f64,
-    min: T,
-    max: T,
+    pub quantiles_p25: f64,
+    pub quantiles_p50: f64,
+    pub quantiles_p75: f64,
+    pub quantiles_p90: f64,
+    pub quantiles_p95: f64,
+    pub quantiles_p99: f64,
+    pub mean: f64,
+    pub median: f64,
+    pub stddev: f64,
+    pub min: T,
+    pub max: T,
 }
 
 impl<T> DetailedStats<T> {
@@ -30,6 +31,7 @@ impl<T> DetailedStats<T> {
         quantiles_p99: f64,
         mean: f64,
         median: f64,
+        stddev: f64,
         min: T,
         max: T,
     ) -> Self {
@@ -42,6 +44,7 @@ impl<T> DetailedStats<T> {
             quantiles_p99,
             mean,
             median,
+            stddev,
             min,
             max,
         }
@@ -73,6 +76,7 @@ where
         data.percentile(99),
         data.mean().unwrap_or(0.0),
         data.median(),
+        data.std_dev().unwrap_or(0.0),
         min,
         max,
     )
@@ -162,10 +166,17 @@ impl SummaryBuilder {
     }
 
     fn add_prefill_throughput_tps(&mut self, prefill_throughput_tps: f64) {
+        if prefill_throughput_tps == 0.0 {
+            return;
+        }
         self.prefill_throughput_tps_vec.push(prefill_throughput_tps)
     }
 
     fn add_decode_throughput_tps(&mut self, decode_throughput_tps: f64) {
+        // Should we skip 0.0?
+        if decode_throughput_tps == 0.0 {
+            return;
+        }
         self.decode_throughput_tps_vec.push(decode_throughput_tps)
     }
 
@@ -187,12 +198,14 @@ impl SummaryBuilder {
         }
     }
 
-    fn add_metric(&mut self, metric: &Metrics) -> &mut Self {
-        self.itl_vec.extend_from_slice(&metric.itl_ms_vec);
+    pub fn add_metric(&mut self, metric: &Metrics) -> &mut Self {
         if let Some(error_code) = metric.error_code {
             self.add_error_code(error_code);
         } else {
             // Only add these if there is no error
+            // Previously the slice would always extend
+            // But would there be a case where we have itl but errored?
+            self.itl_vec.extend_from_slice(&metric.itl_ms_vec);
             self.add_ttft(metric.ttft_s);
             self.add_e2e_latency(metric.end_to_end_latency_s);
             self.add_prefill_throughput_tps(metric.prefill_throughput_tps);
@@ -264,5 +277,52 @@ impl SummaryBuilder {
                 .as_secs(),
             args: self.args,
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use statrs::statistics::{Data, Distribution};
+    #[test]
+    fn test_itl() {
+        let vec = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let data = Data::new(vec);
+        let mean = data.mean().unwrap();
+        let stddev = data.std_dev().unwrap();
+
+        let metrics_1 = Metrics {
+            itl_ms_vec: vec![1.0, 2.0, 3.0],
+            ..Default::default()
+        };
+        let metrics_2 = Metrics {
+            itl_ms_vec: vec![4.0, 5.0, 6.0],
+            ..Default::default()
+        };
+        let mut builder = SummaryBuilder::new();
+        builder.add_metric(&metrics_1);
+        builder.add_metric(&metrics_2);
+        assert_eq!(builder.itl_vec, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        let summary = builder.build();
+        assert_eq!(summary.itl.mean, mean);
+        assert_eq!(summary.itl.stddev, stddev);
+    }
+    #[test]
+    fn test_decode_null_tps() {
+        let metrics_1 = Metrics {
+            decode_throughput_tps: 10.0,
+            ..Default::default()
+        };
+        let metrics_2 = Metrics {
+            decode_throughput_tps: 0.0,
+            ..Default::default()
+        };
+        let mut builder = SummaryBuilder::new();
+        builder.add_metric(&metrics_1);
+        builder.add_metric(&metrics_2);
+        assert_eq!(builder.decode_throughput_tps_vec, vec![10.0]);
+
+        let summary = builder.build();
+        assert_eq!(summary.decode_throughput_tps.mean, 10.0);
     }
 }
