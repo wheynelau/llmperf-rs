@@ -22,12 +22,16 @@ async fn main() -> Result<()> {
     // Load once
     let sonnet_lines = prompt::read_sonnet_file(&app_config.tokenizer, "sonnet.txt")?;
 
-    let inputs: Vec<(String, u32, u32)> = prompt::create_inputs(&sonnet_lines, &app_config);
+    let inputs = prompt::create_inputs(&sonnet_lines, &app_config);
+
+    // Create a stream of tasks
+    let mut stream = prompt::create_tasks(
+        inputs,
+        app_config.api_timeout,
+        app_config.cli_config.num_concurrent_requests,
+    );
 
     let time = Instant::now();
-    // Create a stream of tasks
-    let mut stream = prompt::create_tasks(inputs, &app_config);
-
     // Set up the timeout duration
     let timeout_duration = Duration::from_secs(app_config.cli_config.timeout);
 

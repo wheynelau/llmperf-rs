@@ -8,8 +8,10 @@ use rand_distr::{Distribution, Normal};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::Once;
+use tokio::time::Duration;
 
 use crate::api;
+use crate::api::models::Request;
 use crate::config::AppConfig;
 use crate::metrics::{self, Metrics};
 
@@ -34,15 +36,14 @@ pub fn sample_random_positive_int(mean: u32, stddev: u32, prompt_token_length: u
 pub fn randomly_sample_sonnet_lines_prompt(
     prompt_tokens_mean: u32,
     prompt_tokens_stddev: u32,
-    expect_output_tokens: u32,
+    _expect_output_tokens: u32,
     tokenizer: &tokenizers::Tokenizer,
     sonnet_lines: &[(tokenizers::Encoding, u32)],
 ) -> (String, u32) {
-    let prompt_text = format!(
-        "Repeat lines indefinitely from the following text with {expect_output_tokens} output tokens. Don't generate eos tokens:\n\n"
-    );
+    let prompt_text =
+        "Repeat lines indefinitely from the following text. Don't generate eos tokens:\n\n";
 
-    let prompt_encoding = tokenizer.encode_fast(prompt_text.as_str(), false).unwrap();
+    let prompt_encoding = tokenizer.encode_fast(prompt_text, false).unwrap();
     let prompt_ids = prompt_encoding.get_ids().to_vec();
 
     let prompt_token_len = prompt_ids.len() as u32;
@@ -154,10 +155,34 @@ fn get_token_length(tokenizer: &tokenizers::Tokenizer, text: &str) -> u32 {
         .len() as u32
 }
 
+fn build_metrics(prompt_tokens: u32, output_tokens: u32) -> Metrics {
+    let mut metrics = metrics::Metrics::default();
+    // Populate the variables we already know
+    metrics.number_input_tokens = prompt_tokens;
+    metrics.number_output_tokens = output_tokens;
+    metrics.number_total_tokens = metrics.number_input_tokens + metrics.number_output_tokens;
+
+    metrics
+}
+
+fn build_request(api_config: &AppConfig, prompt: String, output_tokens: u32) -> Request {
+    let completion = api::models::ChatCompletionRequest::from_prompt(
+        api_config.model.clone(),
+        prompt,
+        output_tokens,
+        true,
+    );
+    Request::new(
+        api_config.api_base.clone(),
+        api_config.api_key.clone(),
+        completion,
+    )
+}
+
 pub fn create_inputs(
     sonnet_lines: &[(tokenizers::Encoding, u32)],
     app_config: &AppConfig,
-) -> Vec<(String, u32, u32)> {
+) -> Vec<(Metrics, Request)> {
     (0..app_config.cli_config.max_num_completed_requests)
         .map(|_| {
             let output_tokens = sample_random_positive_int(
@@ -172,41 +197,22 @@ pub fn create_inputs(
                 &app_config.tokenizer,
                 sonnet_lines,
             );
-            (prompt, output_tokens, prompt_tokens)
+            let metrics = build_metrics(prompt_tokens, output_tokens);
+            let request = build_request(app_config, prompt, output_tokens);
+            (metrics, request)
         })
         .collect()
 }
 // Builds the stream of tasks
 pub fn create_tasks(
-    inputs: Vec<(String, u32, u32)>,
-    app_config: &AppConfig,
+    inputs: Vec<(Metrics, Request)>,
+    api_timeout: Duration,
+    num_concurrent_requests: usize,
 ) -> impl Stream<Item = (Metrics, Result<(), anyhow::Error>)> + use<> {
-    let api_base = app_config.api_base.clone();
-    let api_key = app_config.api_key.clone();
-    let model = app_config.model.clone();
-    let api_timeout = app_config.api_timeout;
-    let num_concurrent_requests = app_config.cli_config.num_concurrent_requests;
-
     stream::iter(inputs)
-        .map(move |(prompt, output_tokens, prompt_tokens)| {
-            let url = api_base.clone();
-            let api_key = api_key.clone();
-            let model = model.clone();
+        .map(move |(mut metrics, post_request)| {
             async move {
                 // Perform the HTTP GET request
-                let completion = api::models::ChatCompletionRequest::from_prompt(
-                    model,
-                    prompt,
-                    output_tokens,
-                    true,
-                );
-                let post_request = api::models::Request::new(&url, api_key, completion);
-                let mut metrics = metrics::Metrics::default();
-                // Populate the variables we already know
-                metrics.number_input_tokens = prompt_tokens;
-                metrics.number_output_tokens = output_tokens;
-                metrics.number_total_tokens =
-                    metrics.number_input_tokens + metrics.number_output_tokens;
                 let result = api::chat_completions(post_request, &mut metrics, &api_timeout)
                     .await
                     .map_err(|e| anyhow::anyhow!("API error: {}", e));
@@ -214,5 +220,5 @@ pub fn create_tasks(
                 (metrics, result)
             }
         })
-        .buffered(num_concurrent_requests)
+        .buffer_unordered(num_concurrent_requests)
 }
