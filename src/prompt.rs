@@ -163,7 +163,7 @@ pub fn create_inputs(
             let output_tokens = sample_random_positive_int(
                 app_config.cli_config.mean_output_tokens,
                 app_config.cli_config.stddev_output_tokens,
-                0,
+                1,
             );
             let (prompt, prompt_tokens) = randomly_sample_sonnet_lines_prompt(
                 app_config.cli_config.mean_input_tokens,
