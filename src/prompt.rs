@@ -44,10 +44,11 @@ pub fn randomly_sample_sonnet_lines_prompt(
 
     let prompt_encoding = tokenizer.encode_fast(prompt_text.as_str(), false).unwrap();
     let prompt_ids = prompt_encoding.get_ids().to_vec();
-    // Previousl
+
     let prompt_token_len = prompt_ids.len() as u32;
 
     // Set a safe mean in the event a low mean was set with stddev, potentially creating an infinite loop
+    // With the recent change to args.rs this may not be needed
     let safe_mean = std::cmp::max(prompt_tokens_mean, prompt_token_len);
 
     if prompt_tokens_mean < prompt_token_len {

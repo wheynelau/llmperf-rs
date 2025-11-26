@@ -1,6 +1,37 @@
 use clap::Parser;
 use serde::Serialize;
 
+/// validator for mean_input_tokens
+fn validate_mean_input_tokens(value: &str) -> Result<u32, String> {
+    let tokens: u32 = value.parse().map_err(|_| {
+        format!("Invalid value '{}' for --mean-input-tokens: must be a valid number between 50 and 4294967295", value)
+    })?;
+
+    if tokens < 50 {
+        return Err(format!(
+            "Invalid value '{}' for --mean-input-tokens: must be at least 50 tokens",
+            value
+        ));
+    }
+
+    Ok(tokens)
+}
+/// validator for mean_output_tokens
+fn validate_mean_output_tokens(value: &str) -> Result<u32, String> {
+    let tokens: u32 = value.parse().map_err(|_| {
+        format!("Invalid value '{}' for --mean-output-tokens: must be a valid number between 1 and 4294967295", value)
+    })?;
+
+    if tokens < 1 {
+        return Err(format!(
+            "Invalid value '{}' for --mean-output-tokens: must be at least 1 token",
+            value
+        ));
+    }
+
+    Ok(tokens)
+}
+
 #[derive(Parser, Default, Serialize, Debug)]
 #[command(
     version,
@@ -21,7 +52,7 @@ pub struct Cli {
     pub tokenizer: String,
 
     /// The mean number of tokens to send in the prompt for the request.
-    #[arg(long, default_value = "550")]
+    #[arg(long, default_value = "550", value_parser = validate_mean_input_tokens)]
     pub mean_input_tokens: u32,
 
     /// The standard deviation of number of tokens to send in the prompt for the request.
@@ -32,6 +63,7 @@ pub struct Cli {
     #[arg(
         long,
         default_value = "150",
+        value_parser = validate_mean_output_tokens,
         long_help = "The mean number of tokens to generate from each llm request. This is the max_tokens param for the completions API. \nNote that this is not always the number of tokens returned."
     )]
     pub mean_output_tokens: u32,
@@ -40,7 +72,7 @@ pub struct Cli {
     #[arg(long, default_value = "80")]
     pub stddev_output_tokens: u32,
 
-    /// The number of concurrent requests to send.
+    /// The number of concurrent requests to send. Its recommended to not set this value too high >10000.
     #[arg(long, default_value = "10")]
     pub num_concurrent_requests: usize,
 
