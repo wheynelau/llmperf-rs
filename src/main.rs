@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
     );
 
     // Start the ticking
-    pb.enable_steady_tick(Duration::from_millis(200));
+    pb.enable_steady_tick(Duration::from_millis(40));
 
     // Process the stream with timeout and track progress
     let mut completed_tasks = 0u32;
