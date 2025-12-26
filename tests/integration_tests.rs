@@ -6,12 +6,38 @@ use token_benchmark::metrics::models::Metrics;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-#[tokio::test]
-async fn test_chat_completions_1_token_no_usage() {
+async fn setup_chat_mock(stream_response: &str) -> MockServer {
     let mock_server = MockServer::start().await;
 
-    // Return a response that does not contain the usage
-    // Validates the input and output tokens are not changed
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("content-type", "application/json"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(stream_response, "text/event-stream")
+                .set_delay(Duration::from_millis(50)), // Set a small delay to prevent any potential divide by zero issues
+        )
+        .mount(&mock_server)
+        .await;
+
+    mock_server
+}
+
+fn create_test_request(
+    mock_server: &MockServer,
+    model: &str,
+    prompt: &str,
+    max_tokens: u32,
+) -> Request {
+    Request {
+        url: format!("{}/v1/chat/completions", mock_server.uri()),
+        api_key: Some("test-key".to_string()),
+        chat_completion: ChatCompletionRequest::from_prompt(model, prompt, max_tokens, true),
+    }
+}
+
+#[tokio::test]
+async fn test_chat_completions_1_token_no_usage() {
     let stream_response = concat!(
         r#"data: {"choices":[{"index":0,"delta":{"content":" Hello"}}]}"#,
         "\r\n\r\n",
@@ -21,21 +47,8 @@ async fn test_chat_completions_1_token_no_usage() {
         "\r\n\r\n",
     );
 
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .and(header("content-type", "application/json"))
-        .respond_with(ResponseTemplate::new(200).set_body_raw(stream_response, "text/event-stream"))
-        .mount(&mock_server)
-        .await;
-
-    // Create test request
-    let chat_completion = ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true);
-
-    let request = Request {
-        url: format!("{}/v1/chat/completions", mock_server.uri()),
-        api_key: Some("test-key".to_string()),
-        chat_completion,
-    };
+    let mock_server = setup_chat_mock(stream_response).await;
+    let request = create_test_request(&mock_server, "test-model", "Say hello", 10);
 
     let mut metrics = Metrics::default();
     metrics.number_input_tokens = 999; // Set expected input tokens
@@ -86,10 +99,6 @@ async fn test_chat_completions_1_token_no_usage() {
 
 #[tokio::test]
 async fn test_chat_completions_n_tokens_no_usage() {
-    let mock_server = MockServer::start().await;
-
-    // Return a response that does not contain the usage
-    // Validates the input and output tokens are not changed
     let stream_response = concat!(
         r#"data: {"choices":[{"index":0,"delta":{"content":" Hello"}}]}"#,
         "\r\n\r\n",
@@ -101,21 +110,8 @@ async fn test_chat_completions_n_tokens_no_usage() {
         "\r\n\r\n",
     );
 
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .and(header("content-type", "application/json"))
-        .respond_with(ResponseTemplate::new(200).set_body_raw(stream_response, "text/event-stream"))
-        .mount(&mock_server)
-        .await;
-
-    // Create test request
-    let chat_completion = ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true);
-
-    let request = Request {
-        url: format!("{}/v1/chat/completions", mock_server.uri()),
-        api_key: Some("test-key".to_string()),
-        chat_completion,
-    };
+    let mock_server = setup_chat_mock(stream_response).await;
+    let request = create_test_request(&mock_server, "test-model", "Say hello", 10);
 
     let mut metrics = Metrics::default();
     metrics.number_input_tokens = 999; // Set expected input tokens
@@ -164,10 +160,6 @@ async fn test_chat_completions_n_tokens_no_usage() {
 
 #[tokio::test]
 async fn test_chat_completions_n_tokens_with_usage() {
-    let mock_server = MockServer::start().await;
-
-    // Return a response that does not contain the usage
-    // Validates the input and output tokens are not changed
     let stream_response = concat!(
         r#"data: {"choices":[{"index":0,"delta":{"content":" Hello"}}]}"#,
         "\r\n\r\n",
@@ -181,21 +173,8 @@ async fn test_chat_completions_n_tokens_with_usage() {
         "\r\n\r\n",
     );
 
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .and(header("content-type", "application/json"))
-        .respond_with(ResponseTemplate::new(200).set_body_raw(stream_response, "text/event-stream"))
-        .mount(&mock_server)
-        .await;
-
-    // Create test request
-    let chat_completion = ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true);
-
-    let request = Request {
-        url: format!("{}/v1/chat/completions", mock_server.uri()),
-        api_key: Some("test-key".to_string()),
-        chat_completion,
-    };
+    let mock_server = setup_chat_mock(stream_response).await;
+    let request = create_test_request(&mock_server, "test-model", "Say hello", 10);
 
     let mut metrics = Metrics::default();
     // Set both to be 999 to monitor changes
@@ -325,10 +304,6 @@ async fn test_check_usage() {
 
 #[tokio::test]
 async fn test_chat_completions_n_tokens_with_usage_stop_reason_length() {
-    let mock_server = MockServer::start().await;
-
-    // Return a response that does not contain the usage
-    // Validates the input and output tokens are not changed
     let stream_response = concat!(
         r#"data: {"choices":[{"index":0,"delta":{"content":" Hello"}}]}"#,
         "\r\n\r\n",
@@ -342,21 +317,8 @@ async fn test_chat_completions_n_tokens_with_usage_stop_reason_length() {
         "\r\n\r\n",
     );
 
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .and(header("content-type", "application/json"))
-        .respond_with(ResponseTemplate::new(200).set_body_raw(stream_response, "text/event-stream"))
-        .mount(&mock_server)
-        .await;
-
-    // Create test request
-    let chat_completion = ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true);
-
-    let request = Request {
-        url: format!("{}/v1/chat/completions", mock_server.uri()),
-        api_key: Some("test-key".to_string()),
-        chat_completion,
-    };
+    let mock_server = setup_chat_mock(stream_response).await;
+    let request = create_test_request(&mock_server, "test-model", "Say hello", 10);
 
     let mut metrics = Metrics::default();
     // Set both to be 999 to monitor changes

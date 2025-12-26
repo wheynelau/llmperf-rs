@@ -39,7 +39,8 @@ pub async fn chat_completions(
 
         let mut stream = built_client.stream();
 
-        let prefill_start = Instant::now();
+        let request_start = Instant::now();
+        let mut prefill_start = Instant::now();
         let mut ttft: Option<Duration> = None;
         let mut prev_token: Option<Instant> = None;
         let mut itl: Vec<Duration> = Vec::new();
@@ -64,6 +65,7 @@ pub async fn chat_completions(
                                     // First token, set the TTFT
                                     if ttft.is_none() {
                                         ttft = Some(prefill_start.elapsed());
+                                        info!("Time to first token (TTFT): {:?}", ttft.unwrap());
                                     } else if let Some(prev_time) = prev_token {
                                         // This branch handles the ITL
                                         itl.push(prev_time.elapsed());
@@ -85,7 +87,11 @@ pub async fn chat_completions(
                             }
                         }
                     }
-                    SSE::Connected(_) => {}
+                    SSE::Connected(evt) => {
+                        prefill_start = Instant::now();
+                        info!("Connected: {:?}", evt);
+                        info!("Time taken to connect: {:?}", request_start.elapsed());
+                    }
                 },
                 Err(e) => {
                     // Lower the log level as the error will be reported in the metrics
@@ -113,13 +119,18 @@ pub async fn chat_completions(
                 warn!("Usage stats not provided by endpoint, using input stats. Results may vary");
             });
         };
-        let e2e_time = prefill_start.elapsed();
+        let e2e_time = request_start.elapsed();
 
-        metrics.prefill_throughput_tps = calculate_prefill_tps(&ttft, metrics.number_input_tokens);
+        if let Some(t) = ttft {
+            metrics.ttft_s = t.as_secs_f64();
+        }
+
+        metrics.prefill_throughput_tps =
+            calculate_prefill_tps(&metrics.ttft_s, metrics.number_input_tokens);
         metrics.decode_throughput_tps = calculate_decode_tps(&itl);
         metrics.end_to_end_latency_s = e2e_time.as_secs_f64();
 
-        populate_metrics(metrics, ttft, itl, final_str);
+        populate_metrics(metrics, itl, final_str);
     }
     Ok(())
 }

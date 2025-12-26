@@ -2,12 +2,8 @@ use super::models::{DetailedStats, Metrics};
 use statrs::statistics::{Data, Distribution, Max, Min, OrderStatistics, Statistics};
 use tokio::time::Duration;
 
-pub fn calculate_prefill_tps(ttft: &Option<Duration>, input_tokens: u32) -> f64 {
-    if let Some(ttft_duration) = ttft {
-        input_tokens as f64 / ttft_duration.as_secs_f64()
-    } else {
-        0.0
-    }
+pub fn calculate_prefill_tps(ttft: &f64, input_tokens: u32) -> f64 {
+    input_tokens as f64 / ttft
 }
 
 pub fn calculate_decode_tps(itl: &[Duration]) -> f64 {
@@ -18,17 +14,7 @@ pub fn calculate_decode_tps(itl: &[Duration]) -> f64 {
     let total_time = itl.iter().sum::<Duration>().as_secs_f64();
     itl.len() as f64 / total_time
 }
-pub fn populate_metrics(
-    metrics: &mut Metrics,
-    ttft: Option<Duration>,
-    itl: Vec<Duration>,
-    response: String,
-) {
-    // Set TTFT if we got a first token
-    if let Some(ttft_duration) = ttft {
-        metrics.ttft_s = ttft_duration.as_secs_f64();
-    }
-
+pub fn populate_metrics(metrics: &mut Metrics, itl: Vec<Duration>, response: String) {
     // Calculate ITL statistics
     if !itl.is_empty() {
         let itl_f64: Vec<f64> = itl.iter().map(|d| d.as_secs_f64() * 1000.0).collect();
