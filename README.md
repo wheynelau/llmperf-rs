@@ -63,5 +63,5 @@ export HF_TOKEN=hf-abc123
 
 ## Additional details
 
-Some additional docs or details can be found in the [docs](docs) directory.
-
+- Some additional docs or details can be found in the [docs](docs) directory.
+- A local copy of sonnet.txt is no longer needed as it is baked into the binary with `include_str!`. However, compiling the binary from source needs this file to be present in the root directory.
