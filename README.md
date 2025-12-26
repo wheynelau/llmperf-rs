@@ -43,7 +43,7 @@ Basic usage with a specified model:
 
 ```bash
 export OPENAI_API_BASE=http://localhost:8000/v1 # vLLM endpoint
-llmperf --model gpt-3.5-turbo
+llmperf --model Qwen/Qwen3-4B-Instruct-2507
 ```
 
 ### Environment variables
