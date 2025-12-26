@@ -9,6 +9,8 @@ use token_benchmark::config;
 use token_benchmark::metrics;
 use token_benchmark::prompt;
 
+const SONNET_TEXT: &str = include_str!("../sonnet.txt");
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let app_config = config::load_configuration().await?;
@@ -19,8 +21,7 @@ async fn main() -> Result<()> {
         app_config.cli_config.num_concurrent_requests
     );
 
-    // Load once
-    let sonnet_lines = prompt::read_sonnet_file(&app_config.tokenizer, "sonnet.txt")?;
+    let sonnet_lines = prompt::parse_sonnet_text(&app_config.tokenizer, SONNET_TEXT)?;
 
     let inputs = prompt::create_inputs(&sonnet_lines, &app_config);
 

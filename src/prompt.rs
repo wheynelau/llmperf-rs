@@ -117,6 +117,43 @@ pub fn create_prompt(
     (prompt, prompt_ids.len() as u32)
 }
 
+fn tokenize_sonnext_lines(
+    tokenizer: &tokenizers::Tokenizer,
+    sonnet_lines: &[String],
+) -> Result<Vec<(tokenizers::Encoding, u32)>> {
+    // We need to pass references to encode_batch so we don't consume the lines
+    let line_refs: Vec<&str> = sonnet_lines.iter().map(|s| s.as_str()).collect();
+
+    let encodings = tokenizer
+        .encode_batch_fast(line_refs, false)
+        .map_err(|e| anyhow::anyhow!("Failed to encode batch: {}", e))?;
+
+    let lines_with_encodings: Vec<(tokenizers::Encoding, u32)> = encodings
+        .into_iter()
+        .map(|e| {
+            let len = e.len() as u32;
+            (e, len)
+        })
+        .collect();
+
+    Ok(lines_with_encodings)
+}
+
+pub fn parse_sonnet_text(
+    tokenizer: &tokenizers::Tokenizer,
+    sonnet_text: &str,
+) -> Result<Vec<(tokenizers::Encoding, u32)>> {
+    let lines: Vec<String> = sonnet_text
+        .lines()
+        .map(|line| line.to_string() + "\n")
+        .collect();
+
+    let lines_with_encodings = tokenize_sonnext_lines(tokenizer, &lines)?;
+
+    Ok(lines_with_encodings)
+}
+
+#[allow(dead_code)]
 pub fn read_sonnet_file(
     tokenizer: &tokenizers::Tokenizer,
     sonnet_path: &str,
@@ -130,20 +167,7 @@ pub fn read_sonnet_file(
         .map(|line| line + "\n")
         .collect();
 
-    // We need to pass references to encode_batch so we don't consume the lines
-    let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
-
-    let encodings = tokenizer
-        .encode_batch_fast(line_refs, false)
-        .map_err(|e| anyhow::anyhow!("Failed to encode batch: {}", e))?;
-
-    let lines_with_encodings: Vec<(tokenizers::Encoding, u32)> = encodings
-        .into_iter()
-        .map(|e| {
-            let len = e.len() as u32;
-            (e, len)
-        })
-        .collect();
+    let lines_with_encodings = tokenize_sonnext_lines(tokenizer, &lines)?;
 
     Ok(lines_with_encodings)
 }
