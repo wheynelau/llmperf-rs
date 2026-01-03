@@ -35,9 +35,9 @@ fn test_metrics_integration_wo_null() {
     let summary = builder.build();
     assert_eq!(summary.decode_throughput_tps.mean, 50.0);
     assert_eq!(summary.prefill_throughput_tps.mean, 40.0);
-    assert_eq!(summary.ttft.mean, 15.0);
-    assert_eq!(summary.end_to_end_latency.mean, 25.0);
-    assert_eq!(summary.itl.stddev, stddev);
+    assert_eq!(summary.ttft_s.mean, 15.0);
+    assert_eq!(summary.end_to_end_latency_s.mean, 25.0);
+    assert_eq!(summary.itl_ms.stddev, stddev);
     assert_eq!(summary.input_tokens.mean, 15.0);
     assert_eq!(summary.output_tokens.mean, 25.0);
 }
@@ -78,9 +78,9 @@ fn test_metrics_integration_error() {
     // Validate the the errored metrics are not added
     assert_eq!(summary.decode_throughput_tps.mean, 40.0);
     assert_eq!(summary.prefill_throughput_tps.mean, 30.0);
-    assert_eq!(summary.ttft.mean, 10.0);
-    assert_eq!(summary.end_to_end_latency.mean, 20.0);
-    assert_eq!(summary.itl.stddev, stddev);
+    assert_eq!(summary.ttft_s.mean, 10.0);
+    assert_eq!(summary.end_to_end_latency_s.mean, 20.0);
+    assert_eq!(summary.itl_ms.stddev, stddev);
     assert_eq!(summary.input_tokens.mean, 10.0);
     assert_eq!(summary.output_tokens.mean, 20.0);
 }

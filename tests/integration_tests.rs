@@ -37,9 +37,11 @@ async fn test_chat_completions_1_token_no_usage() {
         chat_completion,
     };
 
-    let mut metrics = Metrics::default();
-    metrics.number_input_tokens = 999; // Set expected input tokens
-    metrics.number_output_tokens = 999; // Set 999 to validate that it does not change without usage
+    let mut metrics = Metrics {
+        number_input_tokens: 999,
+        number_output_tokens: 999,
+        ..Default::default()
+    };
 
     let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
 
@@ -117,9 +119,11 @@ async fn test_chat_completions_n_tokens_no_usage() {
         chat_completion,
     };
 
-    let mut metrics = Metrics::default();
-    metrics.number_input_tokens = 999; // Set expected input tokens
-    metrics.number_output_tokens = 999; // Set 999 to validate that it does not change without usage
+    let mut metrics = Metrics {
+        number_input_tokens: 999,
+        number_output_tokens: 999,
+        ..Default::default()
+    };
 
     let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
 
@@ -197,10 +201,11 @@ async fn test_chat_completions_n_tokens_with_usage() {
         chat_completion,
     };
 
-    let mut metrics = Metrics::default();
-    // Set both to be 999 to monitor changes
-    metrics.number_input_tokens = 999;
-    metrics.number_output_tokens = 999;
+    let mut metrics = Metrics {
+        number_input_tokens: 999,
+        number_output_tokens: 999,
+        ..Default::default()
+    };
 
     let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
 
@@ -357,11 +362,11 @@ async fn test_chat_completions_n_tokens_with_usage_stop_reason_length() {
         api_key: Some("test-key".to_string()),
         chat_completion,
     };
-
-    let mut metrics = Metrics::default();
-    // Set both to be 999 to monitor changes
-    metrics.number_input_tokens = 999;
-    metrics.number_output_tokens = 999;
+    let mut metrics = Metrics {
+        number_input_tokens: 999,
+        number_output_tokens: 999,
+        ..Default::default()
+    };
 
     let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
 
@@ -402,4 +407,105 @@ async fn test_chat_completions_n_tokens_with_usage_stop_reason_length() {
         FinishReason::Length,
         "Finish reason should be Length"
     );
+}
+#[tokio::test]
+async fn test_chat_completions_with_reasoning_tokens() {
+    // some endpoints send their content as reasoning rather than normal content
+    let mock_server = MockServer::start().await;
+
+    // This is the vllm endpoint behavior
+    // Alternate reasoning and reasoning_content, as mentioned in their docs for v0.11.0
+    // vllm: reasoning used to be called reasoning_content. For now, reasoning_content will continue to work.
+    // However, we encourage you to migrate to reasoning in case reasoning_content is removed in future.
+    let stream_response = concat!(
+        r#"data: {"choices":[{"index":0,"delta":{"reasoning":"Okay", "reasoning_content":"Okay"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"reasoning_content":",", "reasoning":","}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"reasoning_content":" the"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"reasoning":" point"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"content":" of"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"content":" physics"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"content":" are"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"content":" speed"},"finish_reason":"length"}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[],"usage":{"completion_tokens":10,"prompt_tokens":10,"total_tokens":31}}"#,
+        "\r\n\r\n",
+        r#"data: [DONE]"#,
+        "\r\n\r\n",
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("content-type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(stream_response, "text/event-stream"))
+        .mount(&mock_server)
+        .await;
+
+    // Create test request
+    let chat_completion = ChatCompletionRequest::from_prompt(
+        "test-model",
+        "Explain the theory of relativity",
+        1500,
+        true,
+    );
+
+    let request = Request {
+        url: format!("{}/v1/chat/completions", mock_server.uri()),
+        api_key: Some("test-key".to_string()),
+        chat_completion,
+    };
+
+    let mut metrics = Metrics {
+        number_input_tokens: 999,
+        number_output_tokens: 999,
+        ..Default::default()
+    };
+
+    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+
+    if let Err(ref e) = result {
+        println!("Error details: {:?}", e);
+        println!("Error type: {}", std::any::type_name_of_val(&e));
+    }
+
+    assert!(
+        result.is_ok(),
+        "chat_completions should succeed: {:?}",
+        result
+    );
+
+    // Verify metrics were populated
+    assert_eq!(
+        metrics.number_output_tokens, 10,
+        "Output tokens should change"
+    );
+    assert_eq!(
+        metrics.number_input_tokens, 10,
+        "Input tokens should change"
+    );
+    // This is an issue, should single tokens have decode_throughput_tps?
+    assert!(
+        metrics.decode_throughput_tps > 0.0,
+        "Should have decode throughput"
+    );
+    assert!(
+        metrics.prefill_throughput_tps > 0.0,
+        "Should have prefill throughput"
+    );
+    assert!(metrics.ttft_s > 0.0, "Should have TTFT");
+    assert_eq!(metrics.itl_ms_vec.len(), 7, "ITL len should be n-1");
+    assert!(metrics.finish_reason.is_some(), "Should have finish reason");
+    assert_eq!(
+        metrics.finish_reason.unwrap(),
+        FinishReason::Length,
+        "Finish reason should be Length"
+    );
+    assert_eq!(metrics.content, " of physics are speed", "Content mismatch");
+    assert_eq!(metrics.reasoning, "Okay, the point", "Reasoning mismatch");
 }

@@ -18,6 +18,7 @@ pub async fn chat_completions(
     // Tiny performance optimization
     // 5 is just an estimate
     let mut final_str = String::with_capacity((request.chat_completion.max_tokens * 5) as usize);
+    let mut reasoning_str = String::new();
 
     if request.chat_completion.stream {
         let mut client = eventsource_client::ClientBuilder::for_url(&request.url)?
@@ -58,6 +59,23 @@ pub async fn chat_completions(
 
                         if let Ok(response) = serde_json::from_str::<StreamResponse>(&evt.data) {
                             if let Some(choice) = response.choices.first() {
+                                // Capture reasoning if available
+                                if let Some(reasoning) = choice
+                                    .delta
+                                    .reasoning
+                                    .as_deref()
+                                    .or(choice.delta.reasoning_content.as_deref())
+                                {
+                                    reasoning_str.push_str(reasoning);
+                                    if ttft.is_none() {
+                                        ttft = Some(prefill_start.elapsed());
+                                    } else if let Some(prev_time) = prev_token {
+                                        // This branch handles the ITL
+                                        itl.push(prev_time.elapsed());
+                                    }
+                                    // Set the previous token time
+                                    prev_token = Some(Instant::now());
+                                }
                                 // Capture content if available
                                 if let Some(content) = &choice.delta.content {
                                     final_str.push_str(content);
@@ -82,6 +100,12 @@ pub async fn chat_completions(
                                 metrics.number_output_tokens = usage.completion_tokens;
                                 metrics.number_total_tokens = usage.total_tokens;
                                 should_warn_usage_missing = false;
+                                if let Some(reasoning_tokens) = usage.reasoning_tokens {
+                                    println!(
+                                        "Reasoning tokens reported by endpoint: {}",
+                                        reasoning_tokens
+                                    );
+                                }
                             }
                         }
                     }
@@ -119,7 +143,7 @@ pub async fn chat_completions(
         metrics.decode_throughput_tps = calculate_decode_tps(&itl);
         metrics.end_to_end_latency_s = e2e_time.as_secs_f64();
 
-        populate_metrics(metrics, ttft, itl, final_str);
+        populate_metrics(metrics, ttft, itl, final_str, reasoning_str);
     }
     Ok(())
 }

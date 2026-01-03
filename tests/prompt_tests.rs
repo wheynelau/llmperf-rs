@@ -8,7 +8,7 @@ fn test_create_prompt_functional() {
         tokenizers::Tokenizer::from_pretrained("hf-internal-testing/llama-tokenizer", None)
             .unwrap();
 
-    let raw_lines = vec!["Hello world\n", "Test line\n", "Another line\n"];
+    let raw_lines = ["Hello world\n", "Test line\n", "Another line\n"];
 
     let lines: Vec<(tokenizers::Encoding, u32)> = raw_lines
         .iter()

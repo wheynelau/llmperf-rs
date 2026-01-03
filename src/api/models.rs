@@ -19,6 +19,7 @@ pub struct Usage {
     pub completion_tokens: u32,
     pub prompt_tokens: u32,
     pub total_tokens: u32,
+    pub reasoning_tokens: Option<u32>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -34,7 +35,8 @@ pub struct StreamChoice {
 #[derive(Deserialize, Debug)]
 pub struct StreamDelta {
     pub content: Option<String>,
-    pub reasoning_content: Option<serde_json::Value>,
+    pub reasoning: Option<String>,
+    pub reasoning_content: Option<String>,
 }
 
 #[derive(Default)]

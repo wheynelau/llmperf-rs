@@ -22,7 +22,8 @@ pub fn populate_metrics(
     metrics: &mut Metrics,
     ttft: Option<Duration>,
     itl: Vec<Duration>,
-    response: String,
+    content: String,
+    reasoning: String,
 ) {
     // Set TTFT if we got a first token
     if let Some(ttft_duration) = ttft {
@@ -37,7 +38,8 @@ pub fn populate_metrics(
         metrics.itl_ms_stddev = stddev;
         metrics.itl_ms_vec = itl_f64;
     }
-    metrics.response = response;
+    metrics.content = content;
+    metrics.reasoning = reasoning;
 }
 
 pub fn calculate_stats(itl_vec: &[f64]) -> (f64, f64) {
