@@ -83,8 +83,8 @@ where
 }
 
 with_prefix!(itl "itl_ms_");
-with_prefix!(ttft "ttft_");
-with_prefix!(end_to_end_latency "end_to_end_latency_");
+with_prefix!(ttft "ttft_s_");
+with_prefix!(end_to_end_latency "end_to_end_latency_s_");
 with_prefix!(prefill_throughput_tps "prefill_throughput_tps_");
 with_prefix!(decode_throughput_tps "decode_throughput_tps_");
 with_prefix!(input_tokens "input_tokens_");
@@ -93,11 +93,11 @@ with_prefix!(output_tokens "output_tokens_");
 #[derive(Default, Serialize, Debug)]
 pub struct SummaryMetrics {
     #[serde(flatten, with = "itl")]
-    pub itl: DetailedStats<f64>,
+    pub itl_ms: DetailedStats<f64>,
     #[serde(flatten, with = "ttft")]
-    pub ttft: DetailedStats<f64>,
+    pub ttft_s: DetailedStats<f64>,
     #[serde(flatten, with = "end_to_end_latency")]
-    pub end_to_end_latency: DetailedStats<f64>,
+    pub end_to_end_latency_s: DetailedStats<f64>,
     #[serde(flatten, with = "prefill_throughput_tps")]
     pub prefill_throughput_tps: DetailedStats<f64>,
     #[serde(flatten, with = "decode_throughput_tps")]
@@ -122,6 +122,7 @@ pub struct Metrics {
     pub itl_ms_stddev: f64,
     pub itl_ms_vec: Vec<f64>,
     pub ttft_s: f64,
+    pub ping_s: f64,
     pub end_to_end_latency_s: f64,
     pub number_input_tokens: u32,
     pub number_output_tokens: u32,
@@ -130,7 +131,8 @@ pub struct Metrics {
     pub error_msg: Option<String>,
     pub error_code: Option<u16>,
     pub decode_throughput_tps: f64,
-    pub response: String,
+    pub content: String,
+    pub reasoning: String,
     pub finish_reason: Option<FinishReason>,
 }
 // Due to complexity, might be better to have a builder
@@ -257,9 +259,9 @@ impl SummaryBuilder {
         };
 
         SummaryMetrics {
-            itl: calculate_percentiles_f64(&self.itl_vec),
-            ttft: calculate_percentiles_f64(&self.ttft_vec),
-            end_to_end_latency: calculate_percentiles_f64(&self.end_to_end_latency_vec),
+            itl_ms: calculate_percentiles_f64(&self.itl_vec),
+            ttft_s: calculate_percentiles_f64(&self.ttft_vec),
+            end_to_end_latency_s: calculate_percentiles_f64(&self.end_to_end_latency_vec),
             prefill_throughput_tps: calculate_percentiles_f64(&self.prefill_throughput_tps_vec),
             decode_throughput_tps: calculate_percentiles_f64(&self.decode_throughput_tps_vec),
             input_tokens: calculate_percentiles_ord(&self.input_tokens_vec),
@@ -304,8 +306,8 @@ mod tests {
         assert_eq!(builder.itl_vec, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
         let summary = builder.build();
-        assert_eq!(summary.itl.mean, mean);
-        assert_eq!(summary.itl.stddev, stddev);
+        assert_eq!(summary.itl_ms.mean, mean);
+        assert_eq!(summary.itl_ms.stddev, stddev);
     }
     #[test]
     fn test_decode_null_tps() {
