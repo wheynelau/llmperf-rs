@@ -41,7 +41,7 @@ pub fn randomly_sample_sonnet_lines_prompt(
     sonnet_lines: &[(tokenizers::Encoding, u32)],
 ) -> (String, u32) {
     let prompt_text =
-        "Repeat lines indefinitely from the following text. Don't generate eos tokens:\n\n";
+        "\n\nRepeat lines indefinitely from the above text. Don't generate eos tokens:";
 
     let prompt_encoding = tokenizer.encode_fast(prompt_text, false).unwrap();
     let prompt_ids = prompt_encoding.get_ids().to_vec();
@@ -75,7 +75,7 @@ pub fn randomly_sample_sonnet_lines_prompt(
     (prompt, actual_token_count)
 }
 pub fn create_prompt(
-    mut prompt_ids: Vec<u32>,
+    prompt_ids: Vec<u32>,
     sonnet_lines: &[(tokenizers::Encoding, u32)],
     tokenizer: &tokenizers::Tokenizer,
     remaining_prompt_tokens: u32,
@@ -109,12 +109,12 @@ pub fn create_prompt(
     }
 
     // Combine prompt_ids and result_ids
-    prompt_ids.extend(&result_ids);
+    result_ids.extend(prompt_ids);
 
     // Decode the final result to get the prompt text
-    let prompt = tokenizer.decode(&prompt_ids, false).unwrap();
+    let prompt = tokenizer.decode(&result_ids, false).unwrap();
 
-    (prompt, prompt_ids.len() as u32)
+    (prompt, result_ids.len() as u32)
 }
 
 fn tokenize_sonnext_lines(
