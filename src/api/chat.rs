@@ -100,12 +100,6 @@ pub async fn chat_completions(
                                 metrics.number_output_tokens = usage.completion_tokens;
                                 metrics.number_total_tokens = usage.total_tokens;
                                 should_warn_usage_missing = false;
-                                if let Some(reasoning_tokens) = usage.reasoning_tokens {
-                                    println!(
-                                        "Reasoning tokens reported by endpoint: {}",
-                                        reasoning_tokens
-                                    );
-                                }
                             }
                         }
                     }
