@@ -21,6 +21,7 @@ pub struct ResultsSaver {
     mean_input_tokens: u32,
     mean_output_tokens: u32,
     metadata: HashMap<String, Value>,
+    timestamp: String,
 }
 
 impl ResultsSaver {
@@ -31,12 +32,15 @@ impl ResultsSaver {
         mean_output_tokens: u32,
         metadata_str: &str,
     ) -> Self {
+        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
+
         Self {
             results_dir,
             model,
             mean_input_tokens,
             mean_output_tokens,
             metadata: Self::parse_metadata(metadata_str),
+            timestamp,
         }
     }
 
@@ -67,13 +71,13 @@ impl ResultsSaver {
 
     fn generate_filenames(&self) -> (String, String) {
         let base_filename = format!(
-            "{}_{}_{}",
-            self.model, self.mean_input_tokens, self.mean_output_tokens
+            "{}_{}_{}_{}",
+            self.timestamp, self.model, self.mean_input_tokens, self.mean_output_tokens
         );
         let sanitized_base = self.sanitize_filename(&base_filename);
 
-        let summary_filename = format!("{}_summary", sanitized_base);
-        let individual_responses_filename = format!("{}_individual_responses", sanitized_base);
+        let summary_filename = format!("{sanitized_base}_summary");
+        let individual_responses_filename = format!("{sanitized_base}_individual_responses");
 
         (summary_filename, individual_responses_filename)
     }
@@ -119,7 +123,7 @@ impl ResultsSaver {
         if !results_path.exists() {
             fs::create_dir_all(results_path)?;
         } else if !results_path.is_dir() {
-            return Err(Error::msg(format!("{} is not a directory", results_dir)));
+            return Err(Error::msg(format!("{results_dir} is not a directory")));
         }
 
         let (summary_filename, individual_responses_filename) = self.generate_filenames();
@@ -133,7 +137,7 @@ impl ResultsSaver {
         }
 
         // Save summary to JSON file
-        let summary_path = results_path.join(format!("{}.json", summary_filename));
+        let summary_path = results_path.join(format!("{summary_filename}.json"));
         let summary_json = serde_json::to_string_pretty(&summary_with_metadata)?;
         fs::write(summary_path, summary_json)?;
 
@@ -144,13 +148,13 @@ impl ResultsSaver {
         // let responses_json = serde_json::to_string_pretty(&individual_responses)?;
         // fs::write(responses_path, responses_json)?;
 
-        let parquet_path = results_path.join(format!("{}.parquet", individual_responses_filename));
+        let parquet_path = results_path.join(format!("{individual_responses_filename}.parquet"));
 
         self.save_metrics_arrow(individual_responses, &parquet_path)?;
 
         info!("Results saved to {}/", results_path.display());
-        info!("  - {}.json", summary_filename);
-        info!("  - {}.parquet", individual_responses_filename);
+        info!("  - {summary_filename}.json");
+        info!("  - {individual_responses_filename}.parquet");
 
         Ok(())
     }
