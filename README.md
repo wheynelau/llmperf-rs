@@ -61,6 +61,15 @@ export OPENAI_API_KEY=sk-secret-key
 export HF_TOKEN=hf-abc123
 ```
 
+## Roadmap
+
+There is currently no planned features as it is subject to common issues or concerns. The goal is to provide a simple tool, which does not have very heavy configurations.
+
+Some features that were considered but dropped:
+
+- Non streaming requests
+- Json inputs
+
 ## Additional details
 
 - Some additional docs or details can be found in the [docs](docs) directory.

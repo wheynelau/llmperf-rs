@@ -21,8 +21,11 @@ fn load_and_validate_tokenizer(config: &crate::args::Cli) -> Result<tokenizers::
     // Check if model and tokenizer don't match
     if config.model != config.tokenizer {
         warn!(
-            "Tokenizer not provided, will default to {}. Due to differences in tokenization, the actual input tokens may not equal {}",
-            config.tokenizer, config.mean_input_tokens
+            "Tokenizer != model. Due to differences in tokenization, the actual input tokens may not equal {}",
+            config.mean_input_tokens
+        );
+        warn!(
+            "You can ignore this warning if the tokenizer is a variation, as this is just a string match check."
         );
     }
 
@@ -45,6 +48,7 @@ async fn check_api_endpoint(
             info!("{}", msg);
         }
         Err(e) => {
+            log::error!("Failed to connect to API endpoint: {}", e);
             log::error!("Use --no-check-endpoint to skip this check if needed");
             log::error!("For detailed logging, use: RUST_LOG=INFO");
             return Err(e);

@@ -15,6 +15,10 @@ use crate::api::models::Request;
 use crate::config::AppConfig;
 use crate::metrics::{self, Metrics};
 
+pub const SONNET_TEXT: &str = include_str!("../sonnet.txt");
+pub const PROMPT_TEXT: &str =
+    "Repeat lines indefinitely from the above text. Don't generate eos tokens:\n";
+
 pub fn sample_random_positive_int(mean: u32, stddev: u32, prompt_token_length: u32) -> u32 {
     if stddev == 0 {
         return mean;
@@ -36,14 +40,10 @@ pub fn sample_random_positive_int(mean: u32, stddev: u32, prompt_token_length: u
 pub fn randomly_sample_sonnet_lines_prompt(
     prompt_tokens_mean: u32,
     prompt_tokens_stddev: u32,
-    _expect_output_tokens: u32,
+    prompt_encoding: &tokenizers::Encoding,
     tokenizer: &tokenizers::Tokenizer,
     sonnet_lines: &[(tokenizers::Encoding, u32)],
 ) -> (String, u32) {
-    let prompt_text =
-        "\n\nRepeat lines indefinitely from the above text. Don't generate eos tokens:";
-
-    let prompt_encoding = tokenizer.encode_fast(prompt_text, false).unwrap();
     let prompt_ids = prompt_encoding.get_ids().to_vec();
 
     let prompt_token_len = prompt_ids.len() as u32;
@@ -69,27 +69,23 @@ pub fn randomly_sample_sonnet_lines_prompt(
 
     let remaining_prompt_tokens = num_prompt_tokens - prompt_token_len;
 
-    let (prompt, actual_token_count) = create_prompt(
-        &prompt_ids,
-        sonnet_lines,
-        tokenizer,
-        remaining_prompt_tokens,
-    );
+    let result_ids = create_prompt(&prompt_ids, sonnet_lines, remaining_prompt_tokens);
+    let prompt = tokenizer.decode(&result_ids, false).unwrap();
+    let actual_token_count = result_ids.len() as u32;
 
     (prompt, actual_token_count)
 }
 pub fn create_prompt(
     prompt_ids: &[u32],
     sonnet_lines: &[(tokenizers::Encoding, u32)],
-    tokenizer: &tokenizers::Tokenizer,
     remaining_prompt_tokens: u32,
-) -> (String, u32) {
+) -> Vec<u32> {
     // Create a mutable copy to shuffle for each call to maintain randomness
     let mut shuffled_indices: Vec<usize> = (0..sonnet_lines.len()).collect();
     let mut rng = rand::rng();
     shuffled_indices.shuffle(&mut rng);
 
-    let mut result_ids = Vec::new();
+    let mut result_ids: Vec<u32> = Vec::new();
     let mut remaining = remaining_prompt_tokens;
 
     // Use cycle to replicate the while loop from the original python code
@@ -107,6 +103,7 @@ pub fn create_prompt(
             remaining -= line_len;
         } else {
             // Take partial line
+            // This can result in that line not having a newline, is that acceptable?
             result_ids.extend(&line_ids[..remaining as usize]);
             break;
         }
@@ -115,10 +112,7 @@ pub fn create_prompt(
     // Combine prompt_ids and result_ids
     result_ids.extend(prompt_ids);
 
-    // Decode the final result to get the prompt text
-    let prompt = tokenizer.decode(&result_ids, false).unwrap();
-
-    (prompt, result_ids.len() as u32)
+    result_ids
 }
 
 fn tokenize_sonnext_lines(
@@ -211,6 +205,10 @@ pub fn create_inputs(
     sonnet_lines: &[(tokenizers::Encoding, u32)],
     app_config: &AppConfig,
 ) -> Vec<(Metrics, Request)> {
+    let prompt_encoding = &app_config
+        .tokenizer
+        .encode_fast(PROMPT_TEXT, false)
+        .unwrap();
     (0..app_config.cli_config.max_num_completed_requests)
         .map(|_| {
             let output_tokens = sample_random_positive_int(
@@ -221,7 +219,7 @@ pub fn create_inputs(
             let (prompt, prompt_tokens) = randomly_sample_sonnet_lines_prompt(
                 app_config.cli_config.mean_input_tokens,
                 app_config.cli_config.stddev_input_tokens,
-                output_tokens,
+                prompt_encoding,
                 &app_config.tokenizer,
                 sonnet_lines,
             );
