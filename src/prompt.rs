@@ -69,13 +69,17 @@ pub fn randomly_sample_sonnet_lines_prompt(
 
     let remaining_prompt_tokens = num_prompt_tokens - prompt_token_len;
 
-    let (prompt, actual_token_count) =
-        create_prompt(prompt_ids, sonnet_lines, tokenizer, remaining_prompt_tokens);
+    let (prompt, actual_token_count) = create_prompt(
+        &prompt_ids,
+        sonnet_lines,
+        tokenizer,
+        remaining_prompt_tokens,
+    );
 
     (prompt, actual_token_count)
 }
 pub fn create_prompt(
-    prompt_ids: Vec<u32>,
+    prompt_ids: &[u32],
     sonnet_lines: &[(tokenizers::Encoding, u32)],
     tokenizer: &tokenizers::Tokenizer,
     remaining_prompt_tokens: u32,
