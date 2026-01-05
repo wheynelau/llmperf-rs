@@ -126,7 +126,7 @@ async fn main() -> Result<()> {
     // Save results if results_dir is specified
     if let Err(e) = app_config
         .results_saver
-        .save_results(&summary, &collected_metrics)
+        .save_results(summary, &collected_metrics)
     {
         warn!("Failed to save results: {}", e);
     }

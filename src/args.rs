@@ -1,5 +1,7 @@
 use clap::Parser;
-use serde::Serialize;
+use log::warn;
+use serde::{Serialize, Serializer};
+use std::collections::HashMap;
 
 /// validator for mean_input_tokens
 fn validate_mean_input_tokens(value: &str) -> Result<u32, String> {
@@ -102,10 +104,12 @@ pub struct Cli {
     #[arg(long, default_value = "openai")]
     pub llm_api: String,
 
-    /// A comma separated list of metadata to include in the results, e.g. name=foo,bar=1.
+    /// Metadata to include in the results, e.g. name=foo,bar=1.
     /// These will be added to the metadata field of the results.
-    #[arg(long, default_value = "")]
-    pub metadata: String,
+    /// Can be specified multiple times: --metadata name=foo --metadata bar=1
+    #[arg(long, value_name = "KEY=VALUE", num_args = 0..)]
+    #[serde(serialize_with = "serialize_metadata")]
+    pub metadata: Vec<String>,
 
     /// Disable API sanity check before running benchmark.
     #[arg(
@@ -115,4 +119,23 @@ pub struct Cli {
         long_help = "Disable API sanity check before running benchmark.\n\nThis posts a GET request to the /models endpoint to ensure the API is reachable.\nIf your endpoint does not support this, you can disable this check."
     )]
     pub no_check_endpoint: bool,
+}
+
+/// Converts Vec<String> of "key=value" pairs to HashMap<String, String>
+fn serialize_metadata<S>(metadata: &[String], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut map = HashMap::new();
+    for item in metadata {
+        match item.split_once('=') {
+            Some((k, v)) => {
+                map.insert(k.to_string(), v.to_string());
+            }
+            None => {
+                warn!("Ignoring malformed metadata entry '{item}': expected format 'key=value'");
+            }
+        }
+    }
+    map.serialize(serializer)
 }

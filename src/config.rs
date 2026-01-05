@@ -119,7 +119,6 @@ pub async fn load_configuration() -> Result<AppConfig> {
         model.clone(),
         cli_config.mean_input_tokens,
         cli_config.mean_output_tokens,
-        &cli_config.metadata,
     );
 
     Ok(AppConfig {
