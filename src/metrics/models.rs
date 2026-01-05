@@ -59,7 +59,6 @@ where
         return DetailedStats::default();
     }
 
-    // Use iterator methods for Ord types - more efficient and preserves original type
     let min = vec.iter().min().copied().unwrap();
     let max = vec.iter().max().copied().unwrap();
 

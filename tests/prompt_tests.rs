@@ -31,7 +31,7 @@ fn create_prompt_functional() {
         let actual_tokens = tokenizer.encode_fast(prompt.as_str(), false).unwrap().len();
 
         assert_eq!(actual_tokens as u32, output_tokens);
-        assert_eq!(actual_tokens, target_token as usize);
+        assert_eq!(actual_tokens, target_token);
     }
 }
 
