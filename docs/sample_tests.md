@@ -67,3 +67,7 @@ Result:
     </tr>
   </tbody>
 </table>
+
+## Model behaviour
+
+Noticed that on some reasoning models, they will reason as to why they should not repeat the lines, resulting in very high refusal. 
