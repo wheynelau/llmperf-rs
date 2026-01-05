@@ -29,13 +29,18 @@ fn load_and_validate_tokenizer(config: &crate::args::Cli) -> Result<tokenizers::
     Ok(tokenizer)
 }
 
-async fn check_api_endpoint(url: &str, api_key: Option<String>, skip_check: bool) -> Result<()> {
+async fn check_api_endpoint(
+    url: &str,
+    model: String,
+    api_key: Option<String>,
+    skip_check: bool,
+) -> Result<()> {
     if skip_check {
         info!("Skipping endpoint connectivity check");
         return Ok(());
     }
 
-    match check_endpoint(url, api_key).await {
+    match check_endpoint(url, model, api_key).await {
         Ok(msg) => {
             info!("{}", msg);
         }
@@ -94,7 +99,13 @@ pub async fn load_configuration() -> Result<AppConfig> {
     let tokenizer = load_and_validate_tokenizer(&cli_config)?;
 
     // Check API endpoint
-    check_api_endpoint(&api_base, api_key.clone(), cli_config.no_check_endpoint).await?;
+    check_api_endpoint(
+        &api_base,
+        cli_config.model.clone(),
+        api_key.clone(),
+        cli_config.no_check_endpoint,
+    )
+    .await?;
 
     let model = cli_config.model.clone();
 

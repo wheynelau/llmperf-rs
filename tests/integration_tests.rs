@@ -301,11 +301,41 @@ async fn test_check_endpoint_success() {
 
     let result = chat::check_endpoint(
         &format!("{}/", mock_server.uri()),
+        "gpt-3.5-turbo".to_string(),
         Some("test-key".to_string()),
     )
     .await;
 
     assert!(result.is_ok(), "Endpoint check should succeed");
+}
+
+#[tokio::test]
+async fn test_check_endpoint_wrong_model() {
+    let mock_server = MockServer::start().await;
+
+    // Mock successful /models endpoint
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [
+                {"id": "gpt-3.5-turbo"},
+                {"id": "gpt-4"}
+            ]
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let result = chat::check_endpoint(
+        &format!("{}/", mock_server.uri()),
+        "non-existent-model".to_string(),
+        Some("test-key".to_string()),
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "Endpoint check should fail for wrong model"
+    );
 }
 
 #[tokio::test]
@@ -321,6 +351,7 @@ async fn test_check_usage() {
 
     let result = chat::check_endpoint(
         &format!("{}/", mock_server.uri()),
+        "gpt-3.5-turbo".to_string(),
         Some("invalid-key".to_string()),
     )
     .await;

@@ -122,3 +122,13 @@ pub struct ErrorResponse {
     pub status_code: u16,
     pub headers: std::collections::HashMap<String, String>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct ModelList {
+    pub data: Vec<ModelInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ModelInfo {
+    pub id: String,
+}

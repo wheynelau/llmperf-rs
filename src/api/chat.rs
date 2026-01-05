@@ -4,7 +4,7 @@ use log::{info, warn};
 use std::{error::Error, sync::Once};
 use tokio::time::{Duration, Instant};
 
-use super::models::{Request, StreamResponse};
+use super::models::{ModelList, Request, StreamResponse};
 use crate::metrics::{
     models::Metrics,
     utils::{calculate_decode_tps, calculate_prefill_tps, populate_metrics},
@@ -143,7 +143,12 @@ pub async fn chat_completions(
 }
 
 /// Check API endpoint connectivity by making a GET request to /models endpoint
-pub async fn check_endpoint(url: &str, api_key: Option<String>) -> Result<String, anyhow::Error> {
+/// Checks if the model is in the list of available models
+pub async fn check_endpoint(
+    url: &str,
+    model: String,
+    api_key: Option<String>,
+) -> Result<String, anyhow::Error> {
     // Construct the models endpoint URL
     let models_endpoint = format!("{}/models", url.trim_end_matches('/'));
 
@@ -174,7 +179,19 @@ pub async fn check_endpoint(url: &str, api_key: Option<String>) -> Result<String
     // Check if the request was successful
     match response.status() {
         reqwest::StatusCode::OK => {
+            let models_list: ModelList = response.json().await?;
             info!("Endpoint check successful - server responded with OK status");
+            if !models_list.data.iter().any(|m| m.id == model) {
+                return Err(anyhow::anyhow!(
+                    "Model '{}' not found in available models: {:?}",
+                    model,
+                    models_list
+                        .data
+                        .iter()
+                        .map(|m| &m.id)
+                        .collect::<Vec<&String>>()
+                ));
+            }
             Ok("Endpoint check passed".to_string())
         }
         status => {
@@ -189,4 +206,5 @@ pub async fn check_endpoint(url: &str, api_key: Option<String>) -> Result<String
             ))
         }
     }
+    // Check if the model is in the list of available models
 }
