@@ -4,6 +4,8 @@ use token_benchmark::prompt::{
 
 #[test]
 fn test_create_prompt_functional() {
+    // This test will fail if it is unable to download
+    // TODO: Download json offline to keep in the repo
     let tokenizer =
         tokenizers::Tokenizer::from_pretrained("hf-internal-testing/llama-tokenizer", None)
             .unwrap();
@@ -19,12 +21,22 @@ fn test_create_prompt_functional() {
         })
         .collect();
 
-    for target_tokens in [5, 10] {
-        let (prompt, output_tokens) = create_prompt(Vec::new(), &lines, &tokenizer, target_tokens);
-        let actual_tokens = tokenizer.encode_fast(prompt.as_str(), false).unwrap().len();
+    let prompt = tokenizer.encode("Prompt here:", false).unwrap();
+    let prompt_ids = prompt.get_ids();
+    let prompt_len = prompt.len();
+
+    for target_token in (5..100).step_by(5) {
+        let remaining_prompt_tokens = target_token - prompt_len;
+        let (prompt, output_tokens) = create_prompt(
+            prompt_ids,
+            &lines,
+            &tokenizer,
+            remaining_prompt_tokens as u32,
+        );
+        let actual_tokens = tokenizer.encode(prompt.as_str(), false).unwrap().len();
 
         assert_eq!(actual_tokens as u32, output_tokens);
-        assert_eq!(actual_tokens, target_tokens as usize);
+        assert_eq!(actual_tokens, target_token as usize);
     }
 }
 
