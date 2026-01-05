@@ -2,8 +2,6 @@ use crate::metrics::{Metrics, SummaryMetrics};
 use anyhow::{Error, Result};
 use log::info;
 use regex::Regex;
-use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use tokenizers::{FromPretrainedParameters, Tokenizer};
@@ -14,13 +12,14 @@ use parquet::{
 };
 use serde_arrow::schema::{SchemaLike, TracingOptions};
 
+const TIME_FORMAT: &str = "%Y%m%d_%H%M%S%z";
+
 #[derive(Default)]
 pub struct ResultsSaver {
     results_dir: Option<String>,
     model: String,
     mean_input_tokens: u32,
     mean_output_tokens: u32,
-    metadata: HashMap<String, Value>,
     timestamp: String,
 }
 
@@ -30,36 +29,16 @@ impl ResultsSaver {
         model: String,
         mean_input_tokens: u32,
         mean_output_tokens: u32,
-        metadata_str: &str,
     ) -> Self {
-        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
+        let timestamp = chrono::Local::now().format(TIME_FORMAT).to_string();
 
         Self {
             results_dir,
             model,
             mean_input_tokens,
             mean_output_tokens,
-            metadata: Self::parse_metadata(metadata_str),
             timestamp,
         }
-    }
-
-    fn parse_metadata(metadata_str: &str) -> HashMap<String, Value> {
-        let mut metadata = HashMap::new();
-
-        if metadata_str.is_empty() {
-            return metadata;
-        }
-
-        for pair in metadata_str.split(',') {
-            if let Some((key, value)) = pair.split_once('=') {
-                let key = key.trim().to_string();
-                let value = value.trim().to_string();
-                metadata.insert(key, Value::String(value));
-            }
-        }
-
-        metadata
     }
 
     fn sanitize_filename(&self, base: &str) -> String {
@@ -109,7 +88,7 @@ impl ResultsSaver {
 
     pub fn save_results(
         &self,
-        summary: &SummaryMetrics,
+        summary: SummaryMetrics,
         individual_responses: &[Metrics],
     ) -> Result<()> {
         let results_dir = match &self.results_dir {
@@ -128,17 +107,9 @@ impl ResultsSaver {
 
         let (summary_filename, individual_responses_filename) = self.generate_filenames();
 
-        // Prepare summary with metadata
-        let mut summary_with_metadata = json!(summary);
-        if let Some(summary_obj) = summary_with_metadata.as_object_mut() {
-            for (key, value) in &self.metadata {
-                summary_obj.insert(key.clone(), value.clone());
-            }
-        }
-
         // Save summary to JSON file
         let summary_path = results_path.join(format!("{summary_filename}.json"));
-        let summary_json = serde_json::to_string_pretty(&summary_with_metadata)?;
+        let summary_json = serde_json::to_string_pretty(&summary)?;
         fs::write(summary_path, summary_json)?;
 
         // Deprecated but kept here for reference
