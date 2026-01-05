@@ -59,6 +59,8 @@ export OPENAI_API_BASE=http://localhost:8000/v1
 export OPENAI_API_KEY=sk-secret-key
 # HF_TOKEN, optional, for downloading private tokenizers
 export HF_TOKEN=hf-abc123
+# HF_HOME, optional, path for downloading tokenizers
+export HF_HOME=/tmp/hf
 ```
 
 ## Roadmap
