@@ -1,4 +1,4 @@
-# Token Metrics Explained
+# Metrics
 
 ## How Tokens Are Counted
 
@@ -14,6 +14,8 @@ if let Some(usage) = response.usage {
 }
 ```
 
+If the endpoint does not provide, it uses the calculated values, based on the arguments provided.  
+
 ## For correctness
 
 If you need to get the exact token count, you can pass in a tokenizer to the tool. 
@@ -21,7 +23,7 @@ If you need to get the exact token count, you can pass in a tokenizer to the too
 llmperf --tokenizer <hf tokenizer path>
 ```
 
-Even then, the input tokens may not be the same due to chat templates, but from some testing it was less than 10 tokens off. 
+Even then, the input tokens may not be the same due to chat templates, but from some testing it was less than 20 tokens off. 
 
 The `output tokens` are <= `max_tokens`, more on this below. 
 
@@ -56,6 +58,8 @@ df.columns
 ## SummaryMetrics
 
 Most metrics are summed and aggregated if they are successful, the only exception is `error_code_frequency` which is a counter of error codes.
+
+For benchmarking performance, the most important metrics are TTFT, ITL and possibly RPM, as these are user facing metrics. 
 
 ### Inter Token Latency (ITL)
 
