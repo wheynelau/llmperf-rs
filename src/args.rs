@@ -119,6 +119,15 @@ pub struct Cli {
         long_help = "Disable API sanity check before running benchmark.\n\nThis posts a GET request to the /models endpoint to ensure the API is reachable.\nIf your endpoint does not support this, you can disable this check."
     )]
     pub no_check_endpoint: bool,
+
+    /// Disable reasoning on endpoints
+    #[arg(
+        long = "no-thinking",
+        default_value = "true",
+        action = clap::ArgAction::SetFalse,
+        long_help = "Disable reasoning on endpoints. The endpoint needs to support chat_template_kwargs, and it sends thinking: false and enable_thinking: false in the request body."
+    )]
+    pub thinking: bool,
 }
 
 /// Converts Vec<String> of "key=value" pairs to HashMap<String, String>

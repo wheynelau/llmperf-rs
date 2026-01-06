@@ -193,6 +193,7 @@ fn build_request(api_config: &AppConfig, prompt: String, output_tokens: u32) -> 
         prompt,
         output_tokens,
         true,
+        api_config.cli_config.thinking,
     );
     Request::new(
         api_config.api_base.clone(),

@@ -31,6 +31,7 @@ pub async fn chat_completions(
             client = client.header("Authorization", &format!("Bearer {}", api_key))?;
         }
         let body_json = serde_json::to_string(&request.chat_completion)?;
+        info!("Sending request to {}: {}", request.url, body_json);
         client = client.body(body_json);
         let built_client = client.build();
 

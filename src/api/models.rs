@@ -46,6 +46,21 @@ pub struct Request {
     pub chat_completion: ChatCompletionRequest,
 }
 
+#[derive(Default, Serialize)]
+pub struct ChatTemplateKwargs {
+    pub enable_thinking: bool,
+    pub thinking: bool,
+}
+
+impl ChatTemplateKwargs {
+    pub fn new(thinking: bool) -> Self {
+        ChatTemplateKwargs {
+            enable_thinking: thinking,
+            thinking,
+        }
+    }
+}
+
 impl Request {
     /// Creates a new Request instance.
     pub fn new(
@@ -56,6 +71,7 @@ impl Request {
         let base_url = url.into();
 
         let base_url = base_url.trim_end_matches('/');
+
         Request {
             url: format!("{base_url}/chat/completions"),
             api_key,
@@ -71,6 +87,7 @@ pub struct ChatCompletionRequest {
     pub stream: bool,
     pub max_tokens: u32,
     pub stream_options: StreamOptions,
+    pub chat_template_kwargs: Option<ChatTemplateKwargs>,
 }
 #[derive(Serialize, Default)]
 pub struct StreamOptions {
@@ -83,6 +100,7 @@ impl ChatCompletionRequest {
         prompt: impl Into<String>,
         max_tokens: u32,
         stream: bool,
+        thinking: bool,
     ) -> Self {
         let prompt = prompt.into();
         // Original llmperf code had the system message, but it doesn't seem to be necessary
@@ -98,6 +116,14 @@ impl ChatCompletionRequest {
                 content: prompt,
             },
         ];
+
+        // Should we still use the ChatTemplateKwargs if thinking?
+        // We don't know if the endpooint would accept these kwargs
+        let chat_template_kwargs = if !thinking {
+            Some(ChatTemplateKwargs::new(thinking))
+        } else {
+            None
+        };
         ChatCompletionRequest {
             model: model.into(),
             messages,
@@ -106,6 +132,7 @@ impl ChatCompletionRequest {
             stream_options: StreamOptions {
                 include_usage: true,
             },
+            chat_template_kwargs,
         }
     }
 }

@@ -29,12 +29,14 @@ async fn test_chat_completions_1_token_no_usage() {
         .await;
 
     // Create test request
-    let chat_completion = ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true);
+    let chat_completion =
+        ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true, false);
 
     let request = Request {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        ..Default::default()
     };
 
     let mut metrics = Metrics {
@@ -111,12 +113,14 @@ async fn test_chat_completions_n_tokens_no_usage() {
         .await;
 
     // Create test request
-    let chat_completion = ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true);
+    let chat_completion =
+        ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true, false);
 
     let request = Request {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        ..Default::default()
     };
 
     let mut metrics = Metrics {
@@ -193,12 +197,14 @@ async fn test_chat_completions_n_tokens_with_usage() {
         .await;
 
     // Create test request
-    let chat_completion = ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true);
+    let chat_completion =
+        ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true, false);
 
     let request = Request {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        ..Default::default()
     };
 
     let mut metrics = Metrics {
@@ -261,12 +267,13 @@ async fn test_chat_completions_http_error() {
         .mount(&mock_server)
         .await;
 
-    let chat_completion = ChatCompletionRequest::from_prompt("test-model", "Test", 10, true);
+    let chat_completion = ChatCompletionRequest::from_prompt("test-model", "Test", 10, true, false);
 
     let request = Request {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        ..Default::default()
     };
 
     let mut metrics = Metrics::default();
@@ -386,12 +393,14 @@ async fn test_chat_completions_n_tokens_with_usage_stop_reason_length() {
         .await;
 
     // Create test request
-    let chat_completion = ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true);
+    let chat_completion =
+        ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true, false);
 
     let request = Request {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        ..Default::default()
     };
     let mut metrics = Metrics {
         number_input_tokens: 999,
@@ -484,12 +493,14 @@ async fn test_chat_completions_with_reasoning_tokens() {
         "Explain the theory of relativity",
         1500,
         true,
+        false,
     );
 
     let request = Request {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        ..Default::default()
     };
 
     let mut metrics = Metrics {

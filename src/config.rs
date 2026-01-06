@@ -89,8 +89,7 @@ fn parse_environment_variables() -> Result<(Option<String>, String, Duration)> {
 // This function should handle all the preflight tasks
 pub async fn load_configuration() -> Result<AppConfig> {
     // Initialize logger with warn level by default
-    env_logger::Builder::from_default_env()
-        .init();
+    env_logger::Builder::from_default_env().init();
 
     // Parse CLI arguments
     let cli_config = crate::args::Cli::parse();
