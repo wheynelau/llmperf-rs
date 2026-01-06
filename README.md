@@ -65,12 +65,13 @@ export HF_HOME=/tmp/hf
 
 ## Roadmap
 
-There is currently no planned features as it is subject to common issues or concerns. The goal is to provide a simple tool, which does not have very heavy configurations.
+There are currently no planned features as it is subject to common issues or concerns. The goal is to provide a simple tool, which does not have very heavy configurations.
 
 Some features that were considered but dropped:
 
 - Non streaming requests
-- Json inputs
+- JSON inputs
+- Warmup requests, suggest is to either by run test twice or submit a separate request
 
 ## Additional details
 

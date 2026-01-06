@@ -109,3 +109,7 @@ This is for confirming that all runs end with the max tokens. Occasionally, due 
 Then you would encounter Finish Reason = stop, rather than Finish Reason = length. For an accurate metric, all runs should end with Finish Reason = length.
 
 However for the current codebase, finish reason stop is included. The variance will occur in RPM and E2E latency. It is left to the user to decide if they want to aggregate with or without the stopped sequences. 
+
+## Conclusion
+
+The role of llmperf is to help with LLM configuration, selection of models should still be done via other evaluations. A faster model does not mean a better model. 
