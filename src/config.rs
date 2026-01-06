@@ -90,7 +90,6 @@ fn parse_environment_variables() -> Result<(Option<String>, String, Duration)> {
 pub async fn load_configuration() -> Result<AppConfig> {
     // Initialize logger with warn level by default
     env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Warn)
         .init();
 
     // Parse CLI arguments
