@@ -1,6 +1,6 @@
 use eventsource_client::{Client, SSE};
 use futures::StreamExt;
-use log::{info, warn};
+use log::{debug, error, info, warn};
 use std::{error::Error, sync::Once};
 use tokio::time::{Duration, Instant};
 
@@ -9,6 +9,66 @@ use crate::metrics::{
     models::Metrics,
     utils::{calculate_decode_tps, calculate_prefill_tps, populate_metrics},
 };
+
+/// Extract error message from response body, handling OpenAI-style error format
+fn extract_error_message(body_str: &str) -> String {
+    // Try to parse as JSON and extract error.message
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(body_str) {
+        if let Some(msg) = json["error"]["message"].as_str() {
+            return msg.to_string();
+        }
+    }
+
+    // Fallback to raw preview
+    if body_str.len() > 200 {
+        format!("{}...", &body_str[..200])
+    } else {
+        body_str.to_string()
+    }
+}
+
+async fn handle_error(
+    e: eventsource_client::Error,
+    metrics: &mut Metrics,
+) -> eventsource_client::Error {
+    match e {
+        eventsource_client::Error::UnexpectedResponse(response, body) => {
+            let status = response.status();
+            metrics.error_code = Some(status);
+            // Try to get the error body
+            let error_msg = match body.body_bytes().await {
+                Ok(bytes) => {
+                    if let Ok(body_str) = std::str::from_utf8(&bytes) {
+                        let display_msg = extract_error_message(body_str);
+                        info!("API error: HTTP {} - {}", status, display_msg);
+                        format!("HTTP {} - {}", status, display_msg)
+                    } else {
+                        info!(
+                            "API error: HTTP {} - Response: {} bytes",
+                            status,
+                            bytes.len()
+                        );
+                        format!("HTTP {} - {} bytes", status, bytes.len())
+                    }
+                }
+                Err(_) => {
+                    info!("API error: HTTP {} - Could not read response body", status);
+                    format!("HTTP {} - could not read response body", status)
+                }
+            };
+            metrics.error_msg = Some(error_msg.clone());
+            return eventsource_client::Error::HttpStream(
+                anyhow::anyhow!("Unexpected HTTP response: {}", error_msg).into(),
+            );
+        }
+        _ => {
+            metrics.error_code = None;
+            error!("Stream error: {}", e);
+            // Return the error
+            return e;
+        }
+    }
+}
 
 pub async fn chat_completions(
     request: Request,
@@ -31,7 +91,7 @@ pub async fn chat_completions(
             client = client.header("Authorization", &format!("Bearer {}", api_key))?;
         }
         let body_json = serde_json::to_string(&request.chat_completion)?;
-        info!("Sending request to {}: {}", request.url, body_json);
+        debug!("Sending request to {}: {}", request.url, body_json);
         client = client.body(body_json);
         let built_client = client.build();
 
@@ -108,23 +168,8 @@ pub async fn chat_completions(
                     SSE::Connected(_) => {}
                 },
                 Err(e) => {
-                    // Lower the log level as the error will be reported in the metrics
-                    info!("Stream error: {}", e);
-
                     // Extract status code if it's an HTTP response error
-                    match &e {
-                        eventsource_client::Error::UnexpectedResponse(response, _) => {
-                            metrics.error_code = Some(response.status());
-                        }
-                        _ => {
-                            metrics.error_code = None;
-                        }
-                    }
-
-                    // Record error in metrics
-                    metrics.error_msg = Some(e.to_string());
-                    // Return Ok to continue the loop
-                    return Err(e.into());
+                    return Err(handle_error(e, metrics).await.into());
                 }
             }
         }

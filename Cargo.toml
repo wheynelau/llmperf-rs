@@ -1,6 +1,6 @@
 [package]
 name = "llmperf"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 repository = "https://github.com/wheynelau/llmperf-rs"
 description = "A benchmarking tool for large language model (LLM) inference performance."
@@ -40,3 +40,6 @@ inherits = "release"
 lto = "fat"
 codegen-units = 1
 
+
+[profile.release]
+lto = "thin"
