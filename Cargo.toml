@@ -1,6 +1,6 @@
 [package]
 name = "llmperf"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 repository = "https://github.com/wheynelau/llmperf-rs"
 
@@ -10,9 +10,9 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0.100"
-arrow = "57.1.0"
-chrono = "0.4.42"
-clap = { version = "4.5.54", features = ["derive"] }
+arrow = "57.2.0"
+chrono = "0.4.43"
+clap = { version = "4.5.56", features = ["derive"] }
 env_logger = "0.11.8"
 eventsource-client = "0.16.0"
 futures = "0.3"
@@ -38,4 +38,5 @@ tokio-test = "0.4"
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
-lto = "thin"
+lto = "fat"
+codegen-units = 1
