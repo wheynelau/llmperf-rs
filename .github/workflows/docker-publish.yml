@@ -36,11 +36,9 @@ jobs:
       - name: Extract version from plan
         id: version
         run: |
-          # Get version from the plan JSON
+          # Get version from the plan JSON (this is the release tag, e.g., "0.2.0-beta.4" or "v0.2.0")
           TAG='${{ fromJson(inputs.plan).announcement_tag }}'
-          # Remove 'v' prefix if present
-          VERSION="${TAG#v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Docker metadata
