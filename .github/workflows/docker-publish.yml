@@ -49,6 +49,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}},value=${{ steps.version.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ steps.version.outputs.tag }},enable=${{ !startsWith(steps.version.outputs.tag, 'v0.') && !startsWith(steps.version.outputs.tag, '0.') }}
             type=raw,value=latest,enable=${{ !fromJson(inputs.plan).announcement_is_prerelease }}
 
       - name: Build and push Docker image

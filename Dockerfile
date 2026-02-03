@@ -1,16 +1,16 @@
-FROM debian:bookworm-slim
+# Stage 1: Build
+FROM debian:bookworm-slim AS builder
 
 ARG VERSION
 ARG TARGETARCH
 
-# Install minimal dependencies for downloading and extracting
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Map Docker's TARGETARCH to Rust target triples
+# Rather than building again, use the pre-built binaries from GitHub Releases
 RUN set -eux; \
     case "${TARGETARCH}" in \
         amd64) RUST_TARGET="x86_64-unknown-linux-gnu" ;; \
@@ -21,8 +21,12 @@ RUN set -eux; \
     echo "Downloading from: ${DOWNLOAD_URL}"; \
     curl -fsSL "${DOWNLOAD_URL}" -o /tmp/llmperf.tar.xz; \
     tar -xJf /tmp/llmperf.tar.xz -C /tmp; \
-    mv /tmp/llmperf-${RUST_TARGET}/llmperf /usr/local/bin/llmperf; \
-    chmod +x /usr/local/bin/llmperf; \
-    rm -rf /tmp/llmperf.tar.xz /tmp/llmperf-*
+    mv /tmp/llmperf-${RUST_TARGET}/llmperf /llmperf; \
+    chmod +x /llmperf
+
+# Final Stage: Minimal runtime image
+FROM gcr.io/distroless/cc-debian13:nonroot
+
+COPY --from=builder /llmperf /usr/local/bin/llmperf
 
 ENTRYPOINT ["llmperf"]
