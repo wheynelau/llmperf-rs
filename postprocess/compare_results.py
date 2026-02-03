@@ -1,6 +1,11 @@
-# This is sample file to compare the results, should be used as a reference only.
-# uv run postprocess/compare_results.py
-# assumes that you have a results folder in the upper directory
+# /// script
+# requires-python = ">=3.14"
+# dependencies = [
+#     "pandas",
+# ]
+# ///
+
+# need 3.14 due to zstd, 3.12 is an option but not provided here
 
 import os
 import json
@@ -17,8 +22,15 @@ def load_results(results_dir) -> list[dict]:
                 results.append(data)
     return results
 
-def load_parquet(file_path: str) -> pd.DataFrame:
-    return pd.read_parquet(file_path)
+
+def load_jsonl_zst(file_path: str) -> pd.DataFrame:
+    from compression import zstd
+
+    with open(file_path, "rb") as f:
+        decompressed = zstd.decompress(f.read())
+    lines = decompressed.decode("utf-8").strip().split("\n")
+    records = [json.loads(line) for line in lines]
+    return pd.DataFrame(records)
 
 
 if __name__ == "__main__":
@@ -42,4 +54,3 @@ if __name__ == "__main__":
 
     comparison_df = df[columns_of_interest]
     print(comparison_df)
-    
