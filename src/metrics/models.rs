@@ -121,7 +121,6 @@ pub struct Metrics {
     pub itl_ms_stddev: f64,
     pub itl_ms_vec: Vec<f64>,
     pub ttft_s: f64,
-    pub ping_s: f64,
     pub end_to_end_latency_s: f64,
     pub number_input_tokens: u32,
     pub number_output_tokens: u32,

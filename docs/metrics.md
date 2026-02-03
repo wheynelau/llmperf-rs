@@ -27,56 +27,56 @@ Even then, the input tokens may not be the same due to chat templates, but from 
 
 The `output tokens` are <= `max_tokens`, more on this below. 
 
-## What the Metrics Mean
-
-- **Input tokens**: Tokens in your prompt/request
-- **Output tokens**: Tokens generated in response to your request
-- **Total tokens**: Input + Output tokens
-
 ## Per Response Metrics
 
-This may require `arrow` or `fastparquet` to be installed.
+Stored in `*_individual_responses.jsonl.zst`.
 
-Per response metrics are stored in a parquet file for storage efficiency.  
-
-```python
-import pandas as pd
-
-df = pd.read_parquet("<path to parquet file>")
-df.columns
-# Index(['itl_ms_mean', 'itl_ms_stddev', 'itl_ms_vec', 'ttft_s',
-#        'end_to_end_latency_s', 'number_input_tokens', 'number_output_tokens',
-#        'number_total_tokens', 'prefill_throughput_tps', 'error_msg',
-#        'error_code', 'number_errors', 'decode_throughput_tps', 'response',
-#        'finish_reason'],
-#       dtype='object')
-
-# Note that itl_ms_vec is an array of f64, despite dtype showing object
-# The above columns may change
+```bash
+zstdcat results/<filename>_individual_responses.jsonl.zst | head -n1 | jq
 ```
 
-## SummaryMetrics
+```json
+{
+  "itl_ms_mean": 23.81,
+  "itl_ms_stddev": 13.74,
+  "itl_ms_vec": [0.001, 29.03, 25.61, ...],
+  "ttft_s": 0.125,
+  "end_to_end_latency_s": 0.363,
+  "number_input_tokens": 112,
+  "number_output_tokens": 10,
+  "number_total_tokens": 122,
+  "prefill_throughput_tps": 893.58,
+  "error_msg": null,
+  "error_code": null,
+  "decode_throughput_tps": 41.99,
+  "content": "With beauty's treasure, ere it be self-",
+  "reasoning": "",
+  "finish_reason": "length"
+}
+```
 
-Most metrics are summed and aggregated if they are successful, the only exception is `error_code_frequency` which is a counter of error codes.
+Python:
 
-For benchmarking performance, the most important metrics are TTFT, ITL and possibly RPM, as these are user facing metrics. 
+Review the code in [postprocess/compare_results.py](/postprocess/compare_results.py). It briefly shows how to read and process the individual responses. You will need uv.
 
-### Inter Token Latency (ITL)
+```bash
+uv run postprocess/compare_results.py
+```
 
-ITL is the latency between tokens.  
+## Summary Metrics
 
-As such each itl_vec always has N - 1 elements, where N is the max tokens.
+Key user-facing metrics: TTFT, ITL, RPM.
 
-The ITL is aggregated over all responses. 
+### ITL (Inter Token Latency)
 
-For example
-  
-Response 1 ITL_vec = [100, 200, 300]  
-Response 2 ITL_vec = [400, 500, 600]  
+Latency between tokens. Each `itl_vec` has N-1 elements where N is output tokens.
 
-The ITL for the entire run would be [100, 200, 300, 400, 500, 600]  
-
-And the metrics are aggregated across the 6 elements.  
+Aggregated across all responses:
+```
+Response 1: [100, 200, 300]
+Response 2: [400, 500, 600]
+Aggregated: [100, 200, 300, 400, 500, 600]
+```
 
 ### TTFT (Time To First Token)
 
@@ -94,6 +94,8 @@ Prefill Throughput is the number of tokens processed per second during the prefi
 $`\frac{\mathrm{number\_input\_tokens}}{\mathrm{ttft}}`$
 
 This explains why the correct input tokens are needed.  
+
+A caveat is that this includes the queue time. 
 
 ### Decode Throughput Tokens Per Second (TPS)
 

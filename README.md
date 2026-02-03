@@ -79,7 +79,11 @@ Some features that were considered but dropped:
 
 ## Additional details
 
-- Some additional docs or details can be found in the [docs](docs) directory.
+- [CLI Reference](docs/cli.md) - Full list of options and output file formats
+- [Metrics](docs/metrics.md) - Detailed explanation of metrics and how to read output files
+- [Prompt](docs/prompt.md) - How prompts are constructed
+- [Sample Tests](docs/sample_tests.md) - Example benchmark comparisons
+- [Deployment](docs/deployment.md) - How to run this as an image or deploy on k8s.
 - A local copy of sonnet.txt is no longer needed as it is baked into the binary with `include_str!`. However, compiling the binary from source needs this file to be present in the root directory.
 
 ## Tested endpoints and their notes

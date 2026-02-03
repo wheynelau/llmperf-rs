@@ -44,7 +44,8 @@ pub async fn chat_completions(
         let prefill_start = Instant::now();
         let mut ttft: Option<Duration> = None;
         let mut prev_token: Option<Instant> = None;
-        let mut itl: Vec<Duration> = Vec::new();
+        let mut itl: Vec<Duration> =
+            Vec::with_capacity(request.chat_completion.max_tokens as usize);
 
         // TODO: Tidy up or break into smaller functions
 
