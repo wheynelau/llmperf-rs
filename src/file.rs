@@ -2,15 +2,10 @@ use crate::metrics::{Metrics, SummaryMetrics};
 use anyhow::{Error, Result};
 use log::info;
 use regex::Regex;
-use std::fs;
+use std::fs::{self, File};
+use std::io::{BufWriter, Write};
 use std::path::Path;
 use tokenizers::{FromPretrainedParameters, Tokenizer};
-
-use arrow::datatypes::FieldRef;
-use parquet::{
-    arrow::arrow_writer::ArrowWriter, basic::Compression, file::properties::WriterProperties,
-};
-use serde_arrow::schema::{SchemaLike, TracingOptions};
 
 const TIME_FORMAT: &str = "%Y%m%d_%H%M%S%z";
 
@@ -61,27 +56,27 @@ impl ResultsSaver {
         (summary_filename, individual_responses_filename)
     }
 
-    fn save_metrics_arrow(
-        &self,
-        metrics: &[Metrics],
-        filepath: &Path,
-    ) -> Result<(), anyhow::Error> {
-        let mut tracing_options = TracingOptions::default();
-        tracing_options.enums_without_data_as_strings = true;
-        let fields = Vec::<FieldRef>::from_type::<Metrics>(tracing_options)?;
+    fn setup_writer(&self, filepath: &Path) -> Result<Box<dyn Write>> {
+        let outfile = File::create(filepath)?;
+        let writer: Box<dyn Write> = if filepath
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("zst"))
+        {
+            let encoder = zstd::stream::write::Encoder::new(outfile, 3)?;
+            Box::new(encoder.auto_finish())
+        } else {
+            Box::new(BufWriter::new(outfile))
+        };
+        Ok(writer)
+    }
 
-        let props = WriterProperties::builder()
-            .set_compression(Compression::ZSTD(Default::default())) // Use ZSTD
-            .build();
+    fn save_metrics_jsonl(&self, metrics: &[Metrics], filepath: &Path) -> Result<()> {
+        let mut writer = self.setup_writer(filepath)?;
 
-        // Build the record batch
-        let batch = serde_arrow::to_record_batch(&fields, &metrics)?;
-
-        let file = fs::File::create(filepath)?;
-        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))?;
-
-        writer.write(&batch)?;
-        writer.close()?;
+        for metric in metrics {
+            let json = serde_json::to_string(metric)?;
+            writeln!(writer, "{json}")?;
+        }
 
         Ok(())
     }
@@ -112,20 +107,14 @@ impl ResultsSaver {
         let summary_json = serde_json::to_string_pretty(&summary)?;
         fs::write(summary_path, summary_json)?;
 
-        // Deprecated but kept here for reference
-        // Depending on the runs, the space required can be up to 5x the parquet size
-        // Save individual responses to JSON file
-        // let responses_path = results_path.join(format!("{}.json", individual_responses_filename));
-        // let responses_json = serde_json::to_string_pretty(&individual_responses)?;
-        // fs::write(responses_path, responses_json)?;
+        // Save individual responses to zstd-compressed JSONL
+        let jsonl_path = results_path.join(format!("{individual_responses_filename}.jsonl.zst"));
 
-        let parquet_path = results_path.join(format!("{individual_responses_filename}.parquet"));
-
-        self.save_metrics_arrow(individual_responses, &parquet_path)?;
+        self.save_metrics_jsonl(individual_responses, &jsonl_path)?;
 
         info!("Results saved to {}/", results_path.display());
         info!("  - {summary_filename}.json");
-        info!("  - {individual_responses_filename}.parquet");
+        info!("  - {individual_responses_filename}.jsonl.zst");
 
         Ok(())
     }
