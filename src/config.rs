@@ -77,12 +77,9 @@ fn parse_environment_variables() -> Result<(Option<String>, String, Duration)> {
     let api_timeout = Duration::from_secs(api_timeout);
 
     // Read API base from environment variable
-    let url = match std::env::var("OPENAI_API_BASE") {
-        Ok(v) => v,
-        Err(_) => {
-            return Err(anyhow::anyhow!("OPENAI_API_BASE is not set"));
-        }
-    };
+    let url = std::env::var("OPENAI_BASE_URL")
+        .or_else(|_| std::env::var("OPENAI_API_BASE"))
+        .map_err(|_| anyhow::anyhow!("Neither OPENAI_API_BASE nor OPENAI_BASE_URL is set"))?;
 
     Ok((api_key, url, api_timeout))
 }

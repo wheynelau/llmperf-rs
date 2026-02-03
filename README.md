@@ -41,8 +41,12 @@ llmperf --help
 
 Basic usage with a specified model:
 
+Note that it reads `OPENAI_BASE_URL` first.  
+
 ```bash
-export OPENAI_API_BASE=http://localhost:8000/v1 # vLLM endpoint
+export OPENAI_BASE_URL=http://localhost:8000/v1 # vLLM endpoint
+# or the legacy
+export OPENAI_API_BASE=http://localhost:8000/v1
 llmperf --model Qwen/Qwen3-4B-Instruct-2507
 ```
 
