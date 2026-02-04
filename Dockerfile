@@ -1,14 +1,10 @@
 # Stage 1: Build
-FROM debian:bookworm-slim AS builder
+FROM alpine:3 AS builder
 
 ARG VERSION
 ARG TARGETARCH
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    xz-utils \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache curl xz ca-certificates
 
 # Rather than building again, use the pre-built binaries from GitHub Releases
 RUN set -eux; \
