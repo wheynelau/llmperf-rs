@@ -1,12 +1,10 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use futures::Stream;
 use futures::stream::{self, StreamExt};
 use log::warn;
 use rand;
 use rand::seq::SliceRandom;
 use rand_distr::{Distribution, Normal};
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::sync::Once;
 use tokio::time::Duration;
 
@@ -151,32 +149,6 @@ pub fn parse_sonnet_text(
     Ok(lines_with_encodings)
 }
 
-#[allow(dead_code)]
-pub fn read_sonnet_file(
-    tokenizer: &tokenizers::Tokenizer,
-    sonnet_path: &str,
-) -> Result<Vec<(tokenizers::Encoding, u32)>> {
-    let file = File::open(sonnet_path).context("Failed to open sonnet file")?;
-    let reader = BufReader::new(file);
-
-    let lines: Vec<String> = reader
-        .lines()
-        .map_while(Result::ok)
-        .map(|line| line + "\n")
-        .collect();
-
-    let lines_with_encodings = tokenize_sonnext_lines(tokenizer, &lines)?;
-
-    Ok(lines_with_encodings)
-}
-#[allow(dead_code)]
-fn get_token_length(tokenizer: &tokenizers::Tokenizer, text: &str) -> u32 {
-    tokenizer
-        .encode_fast(text, true)
-        .expect("Failed to get token length")
-        .len() as u32
-}
-
 fn build_metrics(prompt_tokens: u32, output_tokens: u32) -> Metrics {
     let mut metrics = metrics::Metrics::default();
     // Populate the variables we already know
@@ -205,37 +177,35 @@ fn build_request(api_config: &AppConfig, prompt: String, output_tokens: u32) -> 
 pub fn create_inputs(
     sonnet_lines: &[(tokenizers::Encoding, u32)],
     app_config: &AppConfig,
-) -> Vec<(Metrics, Request)> {
-    let prompt_encoding = &app_config
+) -> impl Iterator<Item = (Metrics, Request)> {
+    let prompt_encoding = app_config
         .tokenizer
         .encode_fast(PROMPT_TEXT, false)
         .unwrap();
-    (0..app_config.cli_config.max_num_completed_requests)
-        .map(|_| {
-            let output_tokens = sample_random_positive_int(
-                app_config.cli_config.mean_output_tokens,
-                app_config.cli_config.stddev_output_tokens,
-                1,
-            );
-            let (prompt, prompt_tokens) = randomly_sample_sonnet_lines_prompt(
-                app_config.cli_config.mean_input_tokens,
-                app_config.cli_config.stddev_input_tokens,
-                prompt_encoding,
-                &app_config.tokenizer,
-                sonnet_lines,
-            );
-            let metrics = build_metrics(prompt_tokens, output_tokens);
-            let request = build_request(app_config, prompt, output_tokens);
-            (metrics, request)
-        })
-        .collect()
+    (0..app_config.cli_config.max_num_completed_requests).map(move |_| {
+        let output_tokens = sample_random_positive_int(
+            app_config.cli_config.mean_output_tokens,
+            app_config.cli_config.stddev_output_tokens,
+            1,
+        );
+        let (prompt, prompt_tokens) = randomly_sample_sonnet_lines_prompt(
+            app_config.cli_config.mean_input_tokens,
+            app_config.cli_config.stddev_input_tokens,
+            &prompt_encoding,
+            &app_config.tokenizer,
+            sonnet_lines,
+        );
+        let metrics = build_metrics(prompt_tokens, output_tokens);
+        let request = build_request(app_config, prompt, output_tokens);
+        (metrics, request)
+    })
 }
 // Builds the stream of tasks
 pub fn create_tasks(
-    inputs: Vec<(Metrics, Request)>,
+    inputs: impl Iterator<Item = (Metrics, Request)>,
     api_timeout: Duration,
     num_concurrent_requests: usize,
-) -> impl Stream<Item = (Metrics, Result<(), anyhow::Error>)> + use<> {
+) -> impl Stream<Item = (Metrics, Result<(), anyhow::Error>)> {
     stream::iter(inputs)
         .map(move |(mut metrics, post_request)| {
             async move {
