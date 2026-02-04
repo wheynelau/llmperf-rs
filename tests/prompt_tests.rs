@@ -10,20 +10,17 @@ fn create_prompt_functional() {
 
     let raw_lines = ["Hello world\n", "Test line\n", "Another line\n"];
 
-    let lines: Vec<(tokenizers::Encoding, u32)> = raw_lines
+    let lines: Vec<tokenizers::Encoding> = raw_lines
         .iter()
-        .map(|line| {
-            let encoding = tokenizer.encode_fast(*line, false).unwrap();
-            let len = encoding.len() as u32;
-            (encoding, len)
-        })
+        .map(|line| tokenizer.encode_fast(*line, false).unwrap())
         .collect();
 
     let prompt = tokenizer.encode_fast("Prompt here:", false).unwrap();
     let prompt_ids = prompt.get_ids();
     let prompt_len = prompt.len();
 
-    for target_token in (5..100).step_by(5) {
+    // noticed that there was a chance of failture, need to monitor, else increase range
+    for target_token in (5..100).step_by(1) {
         let remaining_prompt_tokens = target_token - prompt_len;
         let result_ids = create_prompt(prompt_ids, &lines, remaining_prompt_tokens as u32);
         let prompt = tokenizer.decode(&result_ids, false).unwrap();

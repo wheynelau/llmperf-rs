@@ -12,7 +12,7 @@ pub struct AppConfig {
     pub api_base: String,
     pub api_timeout: Duration,
     pub model: String,
-    pub results_saver: ResultsSaver,
+    pub results_saver: Option<ResultsSaver>,
 }
 
 fn load_and_validate_tokenizer(config: &crate::args::Cli) -> Result<tokenizers::Tokenizer> {
@@ -92,7 +92,7 @@ fn init_logger() {
 }
 
 // This function should handle all the preflight tasks
-pub async fn load_configuration() -> Result<AppConfig> {
+pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
     init_logger();
 
     // Parse CLI arguments
@@ -116,12 +116,17 @@ pub async fn load_configuration() -> Result<AppConfig> {
     let model = cli_config.model.clone();
 
     // Initialize results saver
-    let results_saver = ResultsSaver::new(
-        cli_config.results_dir.clone(),
-        model.clone(),
-        cli_config.mean_input_tokens,
-        cli_config.mean_output_tokens,
-    );
+    let results_saver = if let Some(ref results_dir) = cli_config.results_dir {
+        Some(ResultsSaver::try_new(
+            results_dir,
+            &model,
+            cli_config.mean_input_tokens,
+            cli_config.mean_output_tokens,
+        )?)
+    } else {
+        info!("No results directory specified; skipping results saving.");
+        None
+    };
 
     // we could just log everything here first
     info!(

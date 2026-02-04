@@ -2,6 +2,7 @@ use anyhow::Result;
 use futures::StreamExt;
 use indicatif::ProgressBar;
 use log::{error, info, warn};
+use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant, timeout};
 
 // Import modules from lib.rs
@@ -15,17 +16,22 @@ async fn process_stream(
     completed_tasks: &mut u32,
     failed_tasks: &mut u32,
     collected_metrics: &mut Vec<metrics::Metrics>,
+    tx: Option<&mpsc::UnboundedSender<metrics::Metrics>>,
 ) {
-    while let Some(result) = stream.next().await {
+    while let Some((mut metrics, result)) = stream.next().await {
+        // Only clone and send if tx is provided
+        if let Some(sender) = tx {
+            sender.send(metrics.clone()).ok();
+        }
+        metrics.content = None;
+        metrics.reasoning = None;
+        collected_metrics.push(metrics);
+
         match result {
-            (metrics, Ok(())) => {
-                *completed_tasks += 1;
-                collected_metrics.push(metrics);
-            }
-            (metrics, Err(e)) => {
+            Ok(_) => *completed_tasks += 1,
+            Err(e) => {
                 *failed_tasks += 1;
                 error!("Task failed: {}", e);
-                collected_metrics.push(metrics);
             }
         }
         pb.inc(1);
@@ -36,37 +42,12 @@ async fn process_stream(
 async fn main() -> Result<()> {
     let app_config = config::load_configuration().await?;
 
-    info!(
-        "Starting {} tasks with concurrency of {}",
-        app_config.cli_config.max_num_completed_requests,
-        app_config.cli_config.num_concurrent_requests
-    );
-
-    let sonnet_lines = prompt::parse_sonnet_text(&app_config.tokenizer, prompt::SONNET_TEXT)?;
-
-    let inputs = prompt::create_inputs(&sonnet_lines, &app_config);
-
-    // Create a stream of tasks
-    let mut stream = prompt::create_tasks(
-        inputs,
-        app_config.api_timeout,
-        app_config.cli_config.num_concurrent_requests,
-    );
+    let mut stream = prompt::create_task_stream(&app_config)?;
 
     // Clone cli_config for later use after stream is done
     let cli_config = app_config.cli_config.clone();
 
     let time = Instant::now();
-
-    // Set up the timeout duration (0 means no timeout)
-    if app_config.cli_config.timeout == 0 {
-        info!("Processing tasks with NO timeout (will run until completion)...");
-    } else {
-        info!(
-            "Processing tasks with hard timeout of {} seconds...",
-            app_config.cli_config.timeout
-        );
-    }
 
     // Set up progress bar
     let pb = ProgressBar::new(app_config.cli_config.max_num_completed_requests as u64);
@@ -77,39 +58,39 @@ async fn main() -> Result<()> {
             .progress_chars("#>-"),
     );
 
-    // Start the ticking
-    pb.enable_steady_tick(Duration::from_millis(40));
-
     // Process the stream with timeout and track progress
     let mut completed_tasks = 0u32;
     let mut failed_tasks = 0u32;
     let mut collected_metrics = Vec::new();
 
-    // Handle timeout=0 as "no timeout"
+    // Set up channel and saver only if results_dir is specified
+    let (tx, saver_handle) = if let Some(ref results_saver) = app_config.results_saver {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let handle = token_benchmark::file::setup_streaming_saver(results_saver, rx);
+        (Some(tx), handle)
+    } else {
+        (None, None)
+    };
+
+    // Enable the tick for progress bar
+    pb.enable_steady_tick(Duration::from_millis(40));
+
+    // Process stream with optional timeout
+    let process = process_stream(
+        &mut stream,
+        &pb,
+        &mut completed_tasks,
+        &mut failed_tasks,
+        &mut collected_metrics,
+        tx.as_ref(),
+    );
+
     let timed_out = if app_config.cli_config.timeout == 0 {
-        process_stream(
-            &mut stream,
-            &pb,
-            &mut completed_tasks,
-            &mut failed_tasks,
-            &mut collected_metrics,
-        )
-        .await;
+        process.await;
         false
     } else {
         let timeout_duration = Duration::from_secs(app_config.cli_config.timeout);
-        timeout(
-            timeout_duration,
-            process_stream(
-                &mut stream,
-                &pb,
-                &mut completed_tasks,
-                &mut failed_tasks,
-                &mut collected_metrics,
-            ),
-        )
-        .await
-        .is_err()
+        timeout(timeout_duration, process).await.is_err()
     };
 
     if timed_out {
@@ -118,9 +99,10 @@ async fn main() -> Result<()> {
         pb.finish_with_message("Task processing completed");
     }
 
-    let elapsed = time.elapsed();
+    // Drop the sender to signal completion to the saver task
+    drop(tx);
 
-    // Newline separator for console output after progress bar
+    let elapsed = time.elapsed();
 
     // Always display results and process collected metrics
     if completed_tasks + failed_tasks == app_config.cli_config.max_num_completed_requests {
@@ -160,12 +142,26 @@ async fn main() -> Result<()> {
     // Display summary metrics
     println!("\n{:#?}", summary);
 
-    // Save results if results_dir is specified
-    if let Err(e) = app_config
-        .results_saver
-        .save_results(summary, &collected_metrics)
+    // Wait for the streaming saver to complete and log any errors
+    if let Some(handle) = saver_handle {
+        match handle.await {
+            Ok(Ok(count)) => {
+                info!("Saved {} individual responses to disk", count);
+            }
+            Ok(Err(e)) => {
+                warn!("Failed to save individual responses: {}", e);
+            }
+            Err(e) => {
+                warn!("Saver task panicked: {}", e);
+            }
+        }
+    }
+
+    // Save summary if results_dir is specified
+    if let Some(ref results_saver) = app_config.results_saver
+        && let Err(e) = results_saver.save_summary(&summary)
     {
-        warn!("Failed to save results: {}", e);
+        warn!("Failed to save summary: {}", e);
     }
 
     Ok(())

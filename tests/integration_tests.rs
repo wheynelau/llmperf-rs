@@ -36,7 +36,6 @@ async fn test_chat_completions_1_token_no_usage() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
-        ..Default::default()
     };
 
     let mut metrics = Metrics {
@@ -120,7 +119,6 @@ async fn test_chat_completions_n_tokens_no_usage() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
-        ..Default::default()
     };
 
     let mut metrics = Metrics {
@@ -548,6 +546,14 @@ async fn test_chat_completions_with_reasoning_tokens() {
         FinishReason::Length,
         "Finish reason should be Length"
     );
-    assert_eq!(metrics.content, " of physics are speed", "Content mismatch");
-    assert_eq!(metrics.reasoning, "Okay, the point", "Reasoning mismatch");
+    assert_eq!(
+        metrics.content,
+        Some(" of physics are speed".to_string()),
+        "Content mismatch"
+    );
+    assert_eq!(
+        metrics.reasoning,
+        Some("Okay, the point".to_string()),
+        "Reasoning mismatch"
+    );
 }

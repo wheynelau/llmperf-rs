@@ -3,7 +3,6 @@ use crate::api::models::FinishReason;
 use crate::args::Cli;
 use serde::{Deserialize, Serialize};
 use serde_with::with_prefix;
-use statrs::statistics::{Data, Distribution, OrderStatistics};
 
 #[derive(Default, Serialize, Debug)]
 pub struct DetailedStats<T> {
@@ -20,37 +19,6 @@ pub struct DetailedStats<T> {
     pub max: T,
 }
 
-impl<T> DetailedStats<T> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        quantiles_p25: f64,
-        quantiles_p50: f64,
-        quantiles_p75: f64,
-        quantiles_p90: f64,
-        quantiles_p95: f64,
-        quantiles_p99: f64,
-        mean: f64,
-        median: f64,
-        stddev: f64,
-        min: T,
-        max: T,
-    ) -> Self {
-        Self {
-            quantiles_p25,
-            quantiles_p50,
-            quantiles_p75,
-            quantiles_p90,
-            quantiles_p95,
-            quantiles_p99,
-            mean,
-            median,
-            stddev,
-            min,
-            max,
-        }
-    }
-}
-
 pub fn calculate_percentiles_ord<T>(vec: &[T]) -> DetailedStats<T>
 where
     T: Ord + Copy + Into<f64> + Default,
@@ -62,23 +30,23 @@ where
     let min = vec.iter().min().copied().unwrap();
     let max = vec.iter().max().copied().unwrap();
 
-    // Convert to f64 for statistical calculations
+    // Convert to f64 for statistical calculations and reuse the f64 implementation
     let float_vec: Vec<f64> = vec.iter().map(|&x| x.into()).collect();
-    let mut data = Data::new(float_vec);
+    let f64_stats = calculate_percentiles_f64(&float_vec);
 
-    DetailedStats::new(
-        data.percentile(25),
-        data.percentile(50),
-        data.percentile(75),
-        data.percentile(90),
-        data.percentile(95),
-        data.percentile(99),
-        data.mean().unwrap_or(0.0),
-        data.median(),
-        data.std_dev().unwrap_or(0.0),
+    DetailedStats {
+        quantiles_p25: f64_stats.quantiles_p25,
+        quantiles_p50: f64_stats.quantiles_p50,
+        quantiles_p75: f64_stats.quantiles_p75,
+        quantiles_p90: f64_stats.quantiles_p90,
+        quantiles_p95: f64_stats.quantiles_p95,
+        quantiles_p99: f64_stats.quantiles_p99,
+        mean: f64_stats.mean,
+        median: f64_stats.median,
+        stddev: f64_stats.stddev,
         min,
         max,
-    )
+    }
 }
 
 with_prefix!(itl "itl_ms_");
@@ -115,7 +83,7 @@ pub struct SummaryMetrics {
     pub timestamp: u64,
     pub args: Cli,
 }
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Clone)]
 pub struct Metrics {
     pub itl_ms_mean: f64,
     pub itl_ms_stddev: f64,
@@ -129,8 +97,8 @@ pub struct Metrics {
     pub error_msg: Option<String>,
     pub error_code: Option<u16>,
     pub decode_throughput_tps: f64,
-    pub content: String,
-    pub reasoning: String,
+    pub content: Option<String>,
+    pub reasoning: Option<String>,
     pub finish_reason: Option<FinishReason>,
 }
 // Due to complexity, might be better to have a builder

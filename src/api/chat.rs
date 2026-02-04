@@ -10,15 +10,17 @@ use crate::metrics::{
     utils::{calculate_decode_tps, calculate_prefill_tps, populate_metrics},
 };
 
+/// Estimated average bytes per token for string capacity pre-allocation
+const AVG_BYTES_PER_TOKEN: usize = 5;
+
 /// Extract error message from response body, handling OpenAI-style error format
 fn extract_error_message(body_str: &str) -> String {
     // Try to parse as JSON and extract error.message
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(body_str) {
-        if let Some(msg) = json["error"]["message"].as_str() {
-            return msg.to_string();
-        }
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(body_str)
+        && let Some(msg) = json["error"]["message"].as_str()
+    {
+        return msg.to_string();
     }
-
     // Fallback to raw preview
     if body_str.len() > 200 {
         format!("{}...", &body_str[..200])
@@ -57,16 +59,55 @@ async fn handle_error(
                 }
             };
             metrics.error_msg = Some(error_msg.clone());
-            return eventsource_client::Error::HttpStream(
+            eventsource_client::Error::HttpStream(
                 anyhow::anyhow!("Unexpected HTTP response: {}", error_msg).into(),
-            );
+            )
         }
         _ => {
             metrics.error_code = None;
             error!("Stream error: {}", e);
             // Return the error
-            return e;
+            e
         }
+    }
+}
+
+/// Build an SSE client for the given request
+fn build_sse_client(
+    url: &str,
+    api_key: Option<&str>,
+    body: String,
+    api_timeout: Duration,
+) -> Result<impl eventsource_client::Client, Box<eventsource_client::Error>> {
+    let mut client = eventsource_client::ClientBuilder::for_url(url)?
+        .method("POST".to_string())
+        .header("Content-Type", "application/json")?
+        .connect_timeout(api_timeout)
+        .read_timeout(api_timeout)
+        .write_timeout(api_timeout);
+
+    if let Some(key) = api_key {
+        client = client.header("Authorization", &format!("Bearer {}", key))?;
+    }
+
+    Ok(client.body(body).build())
+}
+
+/// Process a token delta (content or reasoning) and update timing metrics
+fn process_token_delta(
+    content: Option<&str>,
+    ttft: &mut Option<Duration>,
+    prev_token: &mut Option<Instant>,
+    itl: &mut Vec<Duration>,
+    prefill_start: Instant,
+) {
+    if content.is_some() {
+        if ttft.is_none() {
+            *ttft = Some(prefill_start.elapsed());
+        } else if let Some(prev_time) = *prev_token {
+            itl.push(prev_time.elapsed());
+        }
+        *prev_token = Some(Instant::now());
     }
 }
 
@@ -75,39 +116,32 @@ pub async fn chat_completions(
     metrics: &mut Metrics,
     api_timeout: &Duration,
 ) -> Result<(), Box<dyn Error>> {
-    // Tiny performance optimization
-    // 5 is just an estimate
-    let mut final_str = String::with_capacity((request.chat_completion.max_tokens * 5) as usize);
+    // Tiny performance optimization - pre-allocate string capacity
+    let mut final_str =
+        String::with_capacity(request.chat_completion.max_tokens as usize * AVG_BYTES_PER_TOKEN);
     let mut reasoning_str = String::new();
 
     if request.chat_completion.stream {
-        let mut client = eventsource_client::ClientBuilder::for_url(&request.url)?
-            .method("POST".to_string())
-            .header("Content-Type", "application/json")?
-            .connect_timeout(*api_timeout)
-            .read_timeout(*api_timeout)
-            .write_timeout(*api_timeout);
-        if let Some(api_key) = request.api_key {
-            client = client.header("Authorization", &format!("Bearer {}", api_key))?;
-        }
         let body_json = serde_json::to_string(&request.chat_completion)?;
         debug!("Sending request to {}: {}", request.url, body_json);
-        client = client.body(body_json);
-        let built_client = client.build();
+
+        let mut stream = build_sse_client(
+            &request.url,
+            request.api_key.as_deref(),
+            body_json,
+            *api_timeout,
+        )?
+        .stream();
 
         // Init the variables
         static WARN_ONCE: Once = Once::new();
         let mut should_warn_usage_missing = true;
-
-        let mut stream = built_client.stream();
 
         let prefill_start = Instant::now();
         let mut ttft: Option<Duration> = None;
         let mut prev_token: Option<Instant> = None;
         let mut itl: Vec<Duration> =
             Vec::with_capacity(request.chat_completion.max_tokens as usize);
-
-        // TODO: Tidy up or break into smaller functions
 
         while let Some(event_result) = stream.next().await {
             match event_result {
@@ -129,27 +163,24 @@ pub async fn chat_completions(
                                     .or(choice.delta.reasoning_content.as_deref())
                                 {
                                     reasoning_str.push_str(reasoning);
-                                    if ttft.is_none() {
-                                        ttft = Some(prefill_start.elapsed());
-                                    } else if let Some(prev_time) = prev_token {
-                                        // This branch handles the ITL
-                                        itl.push(prev_time.elapsed());
-                                    }
-                                    // Set the previous token time
-                                    prev_token = Some(Instant::now());
+                                    process_token_delta(
+                                        Some(reasoning),
+                                        &mut ttft,
+                                        &mut prev_token,
+                                        &mut itl,
+                                        prefill_start,
+                                    );
                                 }
                                 // Capture content if available
                                 if let Some(content) = &choice.delta.content {
                                     final_str.push_str(content);
-                                    // First token, set the TTFT
-                                    if ttft.is_none() {
-                                        ttft = Some(prefill_start.elapsed());
-                                    } else if let Some(prev_time) = prev_token {
-                                        // This branch handles the ITL
-                                        itl.push(prev_time.elapsed());
-                                    }
-                                    // Set the previous token time
-                                    prev_token = Some(Instant::now());
+                                    process_token_delta(
+                                        Some(content.as_str()),
+                                        &mut ttft,
+                                        &mut prev_token,
+                                        &mut itl,
+                                        prefill_start,
+                                    );
                                 }
                                 // Capture finish reason if available (typically in final chunk)
                                 if choice.finish_reason.is_some() {
@@ -253,5 +284,4 @@ pub async fn check_endpoint(
             ))
         }
     }
-    // Check if the model is in the list of available models
 }

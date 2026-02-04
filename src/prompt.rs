@@ -40,7 +40,7 @@ pub fn randomly_sample_sonnet_lines_prompt(
     prompt_tokens_stddev: u32,
     prompt_encoding: &tokenizers::Encoding,
     tokenizer: &tokenizers::Tokenizer,
-    sonnet_lines: &[(tokenizers::Encoding, u32)],
+    sonnet_lines: &[tokenizers::Encoding],
 ) -> (String, u32) {
     let prompt_ids = prompt_encoding.get_ids().to_vec();
 
@@ -75,7 +75,7 @@ pub fn randomly_sample_sonnet_lines_prompt(
 }
 pub fn create_prompt(
     prompt_ids: &[u32],
-    sonnet_lines: &[(tokenizers::Encoding, u32)],
+    sonnet_lines: &[tokenizers::Encoding],
     remaining_prompt_tokens: u32,
 ) -> Vec<u32> {
     // Create a mutable copy to shuffle for each call to maintain randomness
@@ -92,16 +92,16 @@ pub fn create_prompt(
             break;
         }
 
-        let (encoding, line_len) = &sonnet_lines[line_idx];
+        let encoding = &sonnet_lines[line_idx];
+        let line_len = encoding.len() as u32;
         let line_ids = encoding.get_ids();
 
-        if line_len <= &remaining {
+        if line_len <= remaining {
             // Take the whole line
             result_ids.extend(line_ids);
             remaining -= line_len;
         } else {
             // Take partial line
-            // This can result in that line not having a newline, is that acceptable?
             result_ids.extend(&line_ids[..remaining as usize]);
             break;
         }
@@ -113,10 +113,10 @@ pub fn create_prompt(
     result_ids
 }
 
-fn tokenize_sonnext_lines(
+fn tokenize_sonnet_lines(
     tokenizer: &tokenizers::Tokenizer,
     sonnet_lines: &[String],
-) -> Result<Vec<(tokenizers::Encoding, u32)>> {
+) -> Result<Vec<tokenizers::Encoding>> {
     // We need to pass references to encode_batch so we don't consume the lines
     let line_refs: Vec<&str> = sonnet_lines.iter().map(|s| s.as_str()).collect();
 
@@ -124,27 +124,19 @@ fn tokenize_sonnext_lines(
         .encode_batch_fast(line_refs, false)
         .map_err(|e| anyhow::anyhow!("Failed to encode batch: {}", e))?;
 
-    let lines_with_encodings: Vec<(tokenizers::Encoding, u32)> = encodings
-        .into_iter()
-        .map(|e| {
-            let len = e.len() as u32;
-            (e, len)
-        })
-        .collect();
-
-    Ok(lines_with_encodings)
+    Ok(encodings)
 }
 
 pub fn parse_sonnet_text(
     tokenizer: &tokenizers::Tokenizer,
     sonnet_text: &str,
-) -> Result<Vec<(tokenizers::Encoding, u32)>> {
+) -> Result<Vec<tokenizers::Encoding>> {
     let lines: Vec<String> = sonnet_text
         .lines()
         .map(|line| line.to_string() + "\n")
         .collect();
 
-    let lines_with_encodings = tokenize_sonnext_lines(tokenizer, &lines)?;
+    let lines_with_encodings = tokenize_sonnet_lines(tokenizer, &lines)?;
 
     Ok(lines_with_encodings)
 }
@@ -174,8 +166,8 @@ fn build_request(api_config: &AppConfig, prompt: String, output_tokens: u32) -> 
     )
 }
 
-pub fn create_inputs(
-    sonnet_lines: &[(tokenizers::Encoding, u32)],
+fn create_inputs(
+    sonnet_lines: Vec<tokenizers::Encoding>,
     app_config: &AppConfig,
 ) -> impl Iterator<Item = (Metrics, Request)> {
     let prompt_encoding = app_config
@@ -193,7 +185,7 @@ pub fn create_inputs(
             app_config.cli_config.stddev_input_tokens,
             &prompt_encoding,
             &app_config.tokenizer,
-            sonnet_lines,
+            &sonnet_lines,
         );
         let metrics = build_metrics(prompt_tokens, output_tokens);
         let request = build_request(app_config, prompt, output_tokens);
@@ -201,7 +193,7 @@ pub fn create_inputs(
     })
 }
 // Builds the stream of tasks
-pub fn create_tasks(
+fn create_tasks(
     inputs: impl Iterator<Item = (Metrics, Request)>,
     api_timeout: Duration,
     num_concurrent_requests: usize,
@@ -218,4 +210,17 @@ pub fn create_tasks(
             }
         })
         .buffer_unordered(num_concurrent_requests)
+}
+
+pub fn create_task_stream(
+    config: &AppConfig,
+) -> Result<impl Stream<Item = (Metrics, Result<(), anyhow::Error>)>> {
+    let sonnet_lines = parse_sonnet_text(&config.tokenizer, SONNET_TEXT)?;
+    let inputs = create_inputs(sonnet_lines, config);
+
+    Ok(create_tasks(
+        inputs,
+        config.api_timeout,
+        config.cli_config.num_concurrent_requests,
+    ))
 }

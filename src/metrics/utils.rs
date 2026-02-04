@@ -11,7 +11,7 @@ pub fn calculate_prefill_tps(ttft: &Option<Duration>, input_tokens: u32) -> f64 
 }
 
 pub fn calculate_decode_tps(itl: &[Duration]) -> f64 {
-    // Don't need the output tokens, just the ITL
+    // Calculate decode tps with itl
     if itl.is_empty() {
         return 0.0;
     }
@@ -38,15 +38,14 @@ pub fn populate_metrics(
         metrics.itl_ms_stddev = stddev;
         metrics.itl_ms_vec = itl_f64;
     }
-    metrics.content = content;
-    metrics.reasoning = reasoning;
+    metrics.content = Some(content);
+    metrics.reasoning = Some(reasoning);
 }
 
 pub fn calculate_stats(itl_vec: &[f64]) -> (f64, f64) {
     // Data::new requires an owned container that implements AsMut<[f64]>, so convert the slice to a Vec
     let data = Data::new(itl_vec.to_vec());
-    //
-    let mean = data.mean().expect("NAN should not appear in itl");
+    let mean = data.mean().unwrap_or(0.0);
     let stddev = itl_vec.std_dev();
     (mean, stddev)
 }
@@ -58,17 +57,17 @@ pub fn calculate_percentiles_f64(vec: &[f64]) -> DetailedStats<f64> {
 
     let mut data = Data::new(vec.to_vec());
 
-    DetailedStats::new(
-        data.percentile(25),
-        data.percentile(50),
-        data.percentile(75),
-        data.percentile(90),
-        data.percentile(95),
-        data.percentile(99),
-        data.mean().unwrap_or(0.0),
-        data.median(),
-        data.std_dev().unwrap_or(0.0),
-        data.min(),
-        data.max(),
-    )
+    DetailedStats {
+        quantiles_p25: data.percentile(25),
+        quantiles_p50: data.percentile(50),
+        quantiles_p75: data.percentile(75),
+        quantiles_p90: data.percentile(90),
+        quantiles_p95: data.percentile(95),
+        quantiles_p99: data.percentile(99),
+        mean: data.mean().unwrap_or(0.0),
+        median: data.median(),
+        stddev: data.std_dev().unwrap_or(0.0),
+        min: data.min(),
+        max: data.max(),
+    }
 }
