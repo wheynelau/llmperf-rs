@@ -83,10 +83,17 @@ fn parse_environment_variables() -> Result<(Option<String>, String, Duration)> {
 
     Ok((api_key, url, api_timeout))
 }
+
+/// Init the logger
+fn init_logger() {
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .init();
+}
+
 // This function should handle all the preflight tasks
 pub async fn load_configuration() -> Result<AppConfig> {
-    // Initialize logger with warn level by default
-    env_logger::Builder::from_default_env().init();
+    init_logger();
 
     // Parse CLI arguments
     let cli_config = crate::args::Cli::parse();
@@ -115,6 +122,22 @@ pub async fn load_configuration() -> Result<AppConfig> {
         cli_config.mean_input_tokens,
         cli_config.mean_output_tokens,
     );
+
+    // we could just log everything here first
+    info!(
+        "Starting {} tasks with concurrency of {}",
+        &cli_config.max_num_completed_requests, &cli_config.num_concurrent_requests
+    );
+
+    // Set up the timeout duration (0 means no timeout)
+    if cli_config.timeout == 0 {
+        info!("Processing tasks with no timeout (will run until completion)...");
+    } else {
+        info!(
+            "Processing tasks with hard timeout of {} seconds...",
+            cli_config.timeout
+        );
+    }
 
     Ok(AppConfig {
         cli_config,
