@@ -9,6 +9,29 @@ use token_benchmark::config;
 use token_benchmark::metrics;
 use token_benchmark::prompt;
 
+async fn process_stream(
+    stream: &mut (impl StreamExt<Item = (metrics::Metrics, Result<()>)> + Unpin),
+    pb: &ProgressBar,
+    completed_tasks: &mut u32,
+    failed_tasks: &mut u32,
+    collected_metrics: &mut Vec<metrics::Metrics>,
+) {
+    while let Some(result) = stream.next().await {
+        match result {
+            (metrics, Ok(())) => {
+                *completed_tasks += 1;
+                collected_metrics.push(metrics);
+            }
+            (metrics, Err(e)) => {
+                *failed_tasks += 1;
+                error!("Task failed: {}", e);
+                collected_metrics.push(metrics);
+            }
+        }
+        pb.inc(1);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let app_config = config::load_configuration().await?;
@@ -30,14 +53,20 @@ async fn main() -> Result<()> {
         app_config.cli_config.num_concurrent_requests,
     );
 
-    let time = Instant::now();
-    // Set up the timeout duration
-    let timeout_duration = Duration::from_secs(app_config.cli_config.timeout);
+    // Clone cli_config for later use after stream is done
+    let cli_config = app_config.cli_config.clone();
 
-    info!(
-        "Processing tasks with hard timeout of {} seconds...",
-        app_config.cli_config.timeout
-    );
+    let time = Instant::now();
+
+    // Set up the timeout duration (0 means no timeout)
+    if app_config.cli_config.timeout == 0 {
+        info!("Processing tasks with NO timeout (will run until completion)...");
+    } else {
+        info!(
+            "Processing tasks with hard timeout of {} seconds...",
+            app_config.cli_config.timeout
+        );
+    }
 
     // Set up progress bar
     let pb = ProgressBar::new(app_config.cli_config.max_num_completed_requests as u64);
@@ -56,33 +85,41 @@ async fn main() -> Result<()> {
     let mut failed_tasks = 0u32;
     let mut collected_metrics = Vec::new();
 
-    match timeout(timeout_duration, async {
-        while let Some(result) = stream.next().await {
-            match result {
-                (metrics, Ok(())) => {
-                    completed_tasks += 1;
-                    collected_metrics.push(metrics);
-                }
-                (metrics, Err(e)) => {
-                    failed_tasks += 1;
-                    error!("Task failed: {}", e);
-                    collected_metrics.push(metrics);
-                }
-            }
-            pb.inc(1);
-        }
-    })
-    .await
-    {
-        Ok(_) => {
-            pb.finish_with_message("Task processing completed");
-        }
-        Err(_) => {
-            pb.abandon_with_message("Timeout reached");
-        }
+    // Handle timeout=0 as "no timeout"
+    let timed_out = if app_config.cli_config.timeout == 0 {
+        process_stream(
+            &mut stream,
+            &pb,
+            &mut completed_tasks,
+            &mut failed_tasks,
+            &mut collected_metrics,
+        )
+        .await;
+        false
+    } else {
+        let timeout_duration = Duration::from_secs(app_config.cli_config.timeout);
+        timeout(
+            timeout_duration,
+            process_stream(
+                &mut stream,
+                &pb,
+                &mut completed_tasks,
+                &mut failed_tasks,
+                &mut collected_metrics,
+            ),
+        )
+        .await
+        .is_err()
+    };
+
+    if timed_out {
+        pb.abandon_with_message("Timeout reached");
+    } else {
+        pb.finish_with_message("Task processing completed");
     }
 
     let elapsed = time.elapsed();
+
     // Newline separator for console output after progress bar
 
     // Always display results and process collected metrics
@@ -116,7 +153,7 @@ async fn main() -> Result<()> {
         .num_requests_started(completed_tasks + failed_tasks)
         .add_metrics(&collected_metrics)
         .time(elapsed.as_secs_f64())
-        .args(app_config.cli_config);
+        .args(cli_config);
 
     let summary = summary_builder.build();
 

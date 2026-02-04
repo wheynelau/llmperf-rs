@@ -34,7 +34,7 @@ fn validate_mean_output_tokens(value: &str) -> Result<u32, String> {
     Ok(tokens)
 }
 
-#[derive(Parser, Default, Serialize, Debug)]
+#[derive(Parser, Default, Serialize, Debug, Clone)]
 #[command(
     version,
     about = "Run a token throughput and latency benchmark.",
@@ -78,7 +78,7 @@ pub struct Cli {
     #[arg(long, default_value = "10")]
     pub num_concurrent_requests: usize,
 
-    /// The hard timeout for the test in seconds.
+    /// The hard timeout for the test in seconds. Set to 0 for no timeout.
     #[arg(long, default_value = "90")]
     pub timeout: u64,
 
