@@ -3,35 +3,34 @@ use log::warn;
 use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 
-/// validator for mean_input_tokens
-fn validate_mean_input_tokens(value: &str) -> Result<u32, String> {
+const MIN_INPUT_TOKENS: u32 = 50;
+const MIN_OUTPUT_TOKENS: u32 = 1;
+
+/// validator for token arguments with a minimum value
+fn validate_tokens(value: &str, field_name: &str, min: u32) -> Result<u32, String> {
     let tokens: u32 = value.parse().map_err(|_| {
-        format!("Invalid value '{}' for --mean-input-tokens: must be a valid number between 50 and 4294967295", value)
+        format!("Invalid value '{}' for --{field_name}: must be a valid number between {min} and 4294967295", value)
     })?;
 
-    if tokens < 50 {
+    if tokens < min {
         return Err(format!(
-            "Invalid value '{}' for --mean-input-tokens: must be at least 50 tokens",
-            value
+            "Invalid value '{}' for --{field_name}: must be at least {min} token{}",
+            value,
+            if min > 1 { "s" } else { "" }
         ));
     }
 
     Ok(tokens)
 }
+
+/// validator for mean_input_tokens
+fn validate_mean_input_tokens(value: &str) -> Result<u32, String> {
+    validate_tokens(value, "mean-input-tokens", MIN_INPUT_TOKENS)
+}
+
 /// validator for mean_output_tokens
 fn validate_mean_output_tokens(value: &str) -> Result<u32, String> {
-    let tokens: u32 = value.parse().map_err(|_| {
-        format!("Invalid value '{}' for --mean-output-tokens: must be a valid number between 1 and 4294967295", value)
-    })?;
-
-    if tokens < 1 {
-        return Err(format!(
-            "Invalid value '{}' for --mean-output-tokens: must be at least 1 token",
-            value
-        ));
-    }
-
-    Ok(tokens)
+    validate_tokens(value, "mean-output-tokens", MIN_OUTPUT_TOKENS)
 }
 
 #[derive(Parser, Default, Serialize, Debug, Clone)]
