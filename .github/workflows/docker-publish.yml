@@ -52,7 +52,32 @@ jobs:
             type=semver,pattern={{major}},value=${{ steps.version.outputs.tag }},enable=${{ !startsWith(steps.version.outputs.tag, 'v0.') && !startsWith(steps.version.outputs.tag, '0.') }}
             type=raw,value=latest,enable=${{ !fromJson(inputs.plan).announcement_is_prerelease }}
 
-      - name: Build and push Docker image
+      - uses: actions/download-artifact@v4
+        with:
+          name: artifacts-build-local-x86_64-unknown-linux-gnu
+          path: artifacts/amd64
+
+      # Download the arm64 artifact into a folder named 'arm64'
+      - uses: actions/download-artifact@v4
+        with:
+          name: artifacts-build-local-aarch64-unknown-linux-gnu
+          path: artifacts/arm64
+
+      - name: Extract and Normalize Artifacts
+        run: |
+          # Extract
+          tar -xJf artifacts/amd64/*.tar.xz -C artifacts/amd64/
+          tar -xJf artifacts/arm64/*.tar.xz -C artifacts/arm64/
+
+          # Move
+          mv artifacts/amd64/**/llmperf artifacts/amd64/llmperf
+          mv artifacts/arm64/**/llmperf artifacts/arm64/llmperf
+
+          # Insurance policy: Mark as executable on the runner host
+          # This 'mode' is preserved by the Docker COPY command
+          chmod +x artifacts/amd64/llmperf
+          chmod +x artifacts/arm64/llmperf
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -60,5 +85,3 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ steps.version.outputs.version }}
