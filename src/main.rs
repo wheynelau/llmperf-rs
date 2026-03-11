@@ -1,8 +1,6 @@
 use anyhow::Result;
 use futures::StreamExt;
-use indicatif::ProgressBar;
-use log::{error, info, warn};
-use tokio::sync::mpsc;
+use log::{info, warn};
 use tokio::time::{Duration, Instant, timeout};
 
 // Import modules from lib.rs
@@ -11,78 +9,73 @@ use token_benchmark::metrics;
 use token_benchmark::prompt;
 
 async fn process_stream(
-    stream: &mut (impl StreamExt<Item = (metrics::Metrics, Result<()>)> + Unpin),
-    pb: &ProgressBar,
+    stream: &mut (impl StreamExt<Item = Vec<metrics::Metrics>> + Unpin),
     completed_tasks: &mut u32,
     failed_tasks: &mut u32,
     collected_metrics: &mut Vec<metrics::Metrics>,
-    tx: Option<&mpsc::UnboundedSender<metrics::Metrics>>,
 ) {
-    while let Some((mut metrics, result)) = stream.next().await {
-        // Only clone and send if tx is provided
-        if let Some(sender) = tx {
-            sender.send(metrics.clone()).ok();
-        }
-        metrics.content = None;
-        metrics.reasoning = None;
-        collected_metrics.push(metrics);
-
-        match result {
-            Ok(_) => *completed_tasks += 1,
-            Err(e) => {
+    while let Some(metrics_list) = stream.next().await {
+        for mut metrics in metrics_list {
+            // Track failures based on error_msg in metrics
+            if metrics.error_msg.is_some() {
                 *failed_tasks += 1;
-                error!("Task failed: {}", e);
+            } else {
+                *completed_tasks += 1;
             }
+            metrics.content = None;
+            metrics.reasoning = None;
+            collected_metrics.push(metrics);
         }
-        pb.inc(1);
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .init();
+
     let app_config = config::load_configuration().await?;
 
-    let mut stream = prompt::create_task_stream(&app_config)?;
+    // Check API endpoint
+    config::check_api_endpoint(
+        &app_config.api_base,
+        &app_config.cli_config.model,
+        app_config.api_key.as_deref(),
+        app_config.cli_config.no_check_endpoint,
+    )
+    .await?;
+
+    let task_stream = prompt::create_task_stream(&app_config)?;
+    let mut stream = task_stream.stream;
 
     // Clone cli_config for later use after stream is done
     let cli_config = app_config.cli_config.clone();
 
     let time = Instant::now();
 
-    // Set up progress bar
-    let pb = ProgressBar::new(app_config.cli_config.max_num_completed_requests as u64);
-    pb.set_style(
-        indicatif::ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})")
-            .expect("Failed to set progress bar style")
-            .progress_chars("#>-"),
-    );
-
     // Process the stream with timeout and track progress
     let mut completed_tasks = 0u32;
     let mut failed_tasks = 0u32;
     let mut collected_metrics = Vec::new();
 
+    let (sender, receiver) = (task_stream.sender, task_stream.receiver);
+
     // Set up channel and saver only if results_dir is specified
-    let (tx, saver_handle) = if let Some(ref results_saver) = app_config.results_saver {
-        let (tx, rx) = mpsc::unbounded_channel();
-        let handle = token_benchmark::file::setup_streaming_saver(results_saver, rx);
-        (Some(tx), handle)
+    let saver_handle = if let Some(ref results_saver) = app_config.results_saver {
+        token_benchmark::file::setup_streaming_saver(results_saver, receiver)
     } else {
-        (None, None)
+        None
     };
 
-    // Enable the tick for progress bar
-    pb.enable_steady_tick(Duration::from_millis(40));
+    drop(sender);
 
     // Process stream with optional timeout
     let process = process_stream(
         &mut stream,
-        &pb,
         &mut completed_tasks,
         &mut failed_tasks,
         &mut collected_metrics,
-        tx.as_ref(),
     );
 
     let timed_out = if app_config.cli_config.timeout == 0 {
@@ -94,18 +87,21 @@ async fn main() -> Result<()> {
     };
 
     if timed_out {
-        pb.abandon_with_message("Timeout reached");
+        app_config
+            .progress_bar
+            .abandon_with_message("Timeout reached");
     } else {
-        pb.finish_with_message("Task processing completed");
+        app_config
+            .progress_bar
+            .finish_with_message("Task processing completed");
     }
-
-    // Drop the sender to signal completion to the saver task
-    drop(tx);
 
     let elapsed = time.elapsed();
 
     // Always display results and process collected metrics
-    if completed_tasks + failed_tasks == app_config.cli_config.max_num_completed_requests {
+    if completed_tasks + failed_tasks
+        == app_config.cli_config.max_num_completed_requests * app_config.cli_config.multi_turn
+    {
         info!("All tasks completed successfully!");
     } else {
         warn!(
@@ -140,7 +136,9 @@ async fn main() -> Result<()> {
     let summary = summary_builder.build();
 
     // Display summary metrics
-    println!("\n{:#?}", summary);
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+
+    drop(stream);
 
     // Wait for the streaming saver to complete and log any errors
     if let Some(handle) = saver_handle {

@@ -1,8 +1,39 @@
 use super::models::{DetailedStats, Metrics};
 use statrs::statistics::{Data, Distribution, Max, Min, OrderStatistics, Statistics};
+use std::sync::Arc;
 use tokio::time::Duration;
 
-pub fn calculate_prefill_tps(ttft: &Option<Duration>, input_tokens: u32) -> f64 {
+pub fn calculate_percentiles_ord<T>(vec: &[T]) -> DetailedStats<T>
+where
+    T: Ord + Copy + Into<f64> + Default,
+{
+    if vec.is_empty() {
+        return DetailedStats::default();
+    }
+
+    let min = vec.iter().min().copied().unwrap();
+    let max = vec.iter().max().copied().unwrap();
+
+    // Convert to f64 and pass ownership directly to avoid a second .to_vec() inside calculate_percentiles_f64
+    let float_vec: Vec<f64> = vec.iter().map(|&x| x.into()).collect();
+    let f64_stats = calculate_percentiles_f64_owned(float_vec);
+
+    DetailedStats {
+        quantiles_p25: f64_stats.quantiles_p25,
+        quantiles_p50: f64_stats.quantiles_p50,
+        quantiles_p75: f64_stats.quantiles_p75,
+        quantiles_p90: f64_stats.quantiles_p90,
+        quantiles_p95: f64_stats.quantiles_p95,
+        quantiles_p99: f64_stats.quantiles_p99,
+        mean: f64_stats.mean,
+        median: f64_stats.median,
+        stddev: f64_stats.stddev,
+        min,
+        max,
+    }
+}
+
+pub fn calculate_prefill_tps(ttft: Option<&Duration>, input_tokens: u32) -> f64 {
     if let Some(ttft_duration) = ttft {
         input_tokens as f64 / ttft_duration.as_secs_f64()
     } else {
@@ -38,8 +69,8 @@ pub fn populate_metrics(
         metrics.itl_ms_stddev = stddev;
         metrics.itl_ms_vec = itl_f64;
     }
-    metrics.content = Some(content);
-    metrics.reasoning = Some(reasoning);
+    metrics.content = Some(Arc::from(content));
+    metrics.reasoning = Some(Arc::from(reasoning));
 }
 
 pub fn calculate_stats(itl_vec: &[f64]) -> (f64, f64) {
@@ -54,8 +85,11 @@ pub fn calculate_percentiles_f64(vec: &[f64]) -> DetailedStats<f64> {
     if vec.is_empty() {
         return DetailedStats::default();
     }
+    calculate_percentiles_f64_owned(vec.to_vec())
+}
 
-    let mut data = Data::new(vec.to_vec());
+fn calculate_percentiles_f64_owned(vec: Vec<f64>) -> DetailedStats<f64> {
+    let mut data = Data::new(vec);
 
     DetailedStats {
         quantiles_p25: data.percentile(25),

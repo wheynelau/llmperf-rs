@@ -63,12 +63,17 @@ impl ResultsSaver {
             results_path.join(format!("{individual_responses_filename}.jsonl.zst"));
 
         // we can immediate log here
-        info!("Summary will be saved to {} at the end.", summary_path.display());
+        info!(
+            "Summary will be saved to {} at the end.",
+            summary_path.display()
+        );
         info!(
             "Individual responses will be saved to {}",
             individual_responses_path.display()
         );
-        info!("Individual responses are zstd-compressed and written incrementally. Please do not edit until completion.");
+        info!(
+            "Individual responses are zstd-compressed and written incrementally. Please do not edit until completion."
+        );
         info!("You can still use tools like zstdcat to read partial files.");
 
         Ok(Self {
@@ -109,7 +114,9 @@ impl ResultsSaver {
             count += 1;
         }
 
-        // Flush on completion (writer auto-flushes on drop via auto_finish for zstd)
+        // Explicitly flush to ensure all data is written and zstd stream is finalized
+        writer.flush()?;
+
         Ok(count)
     }
 
