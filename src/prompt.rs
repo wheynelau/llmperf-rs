@@ -1,4 +1,4 @@
-use anyhow::{Error, Result};
+use anyhow::Result;
 use futures::Stream;
 use futures::stream::{self, StreamExt};
 use indicatif::ProgressBar;
@@ -298,42 +298,56 @@ fn create_session_tasks(
     api_base: String,
     api_key: Option<String>,
     progress_bar: &ProgressBar,
-) -> impl Stream<Item = (Vec<Metrics>, Option<String>)> {
+    sender: Option<mpsc::UnboundedSender<Metrics>>,
+) -> impl Stream<Item = Vec<Metrics>> {
     stream::iter(inputs)
         .map(move |input| {
             let api_base = api_base.clone();
             let api_key = api_key.clone();
+            let sender = sender.clone();
 
-            // can be optimised to send the metrics earlier to the receiver
-            // but right now, it only sends after one session is completed.
             async move {
-                let metrics_list =
-                    run_session(input, api_timeout, api_base, api_key, progress_bar, None).await;
-                (metrics_list, None)
+                run_session(input, api_timeout, api_base, api_key, progress_bar, sender).await
             }
         })
         .buffer_unordered(num_concurrent_requests)
 }
 
+/// Container for the task stream and its associated channel endpoints.
+///
+/// The sender is used by run_session() to send metrics incrementally.
+/// The receiver is passed to the file saver for persisting metrics.
+pub struct TaskStream<S> {
+    /// The stream of metrics (one Vec per session, containing all turns).
+    pub stream: S,
+    /// Sender for metrics - metrics are sent immediately after each turn completes.
+    pub sender: mpsc::UnboundedSender<Metrics>,
+    /// Receiver for metrics - passed to file saver for persistence.
+    pub receiver: mpsc::UnboundedReceiver<Metrics>,
+}
+
 pub fn create_task_stream(
     config: &AppConfig,
-) -> Result<impl Stream<Item = (Metrics, Result<(), Error>)>> {
+) -> Result<TaskStream<impl Stream<Item = Vec<Metrics>>>> {
     let sonnet_lines = parse_sonnet_text(&config.tokenizer, SONNET_TEXT)?;
     let inputs = create_session_inputs(sonnet_lines, config);
 
-    // Flatten the session results into a single stream of metrics
-    // Each session produces multiple turn metrics
-    Ok(create_session_tasks(
+    // Create channel for incremental metric sending
+    let (sender, receiver) = mpsc::unbounded_channel();
+
+    let stream = create_session_tasks(
         inputs,
         config.api_timeout,
         config.cli_config.num_concurrent_requests,
         config.api_base.clone(),
         config.api_key.clone(),
         &config.progress_bar,
-    )
-    // can be optimised to send the metrics earlier to the receiver
-    // but right now, it only sends after one session is completed.
-    .flat_map(|(metrics_list, _error)| {
-        stream::iter(metrics_list.into_iter().map(|m| (m, Ok::<(), Error>(()))))
-    }))
+        Some(sender.clone()),
+    );
+
+    Ok(TaskStream {
+        stream,
+        sender,
+        receiver,
+    })
 }
