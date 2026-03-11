@@ -1,7 +1,6 @@
 use anyhow::Result;
 use futures::StreamExt;
-use log::{error, info, warn};
-use tokio::sync::mpsc;
+use log::{info, warn};
 use tokio::time::{Duration, Instant, timeout};
 
 // Import modules from lib.rs
@@ -10,27 +9,22 @@ use token_benchmark::metrics;
 use token_benchmark::prompt;
 
 async fn process_stream(
-    stream: &mut (impl StreamExt<Item = (metrics::Metrics, Result<()>)> + Unpin),
+    stream: &mut (impl StreamExt<Item = Vec<metrics::Metrics>> + Unpin),
     completed_tasks: &mut u32,
     failed_tasks: &mut u32,
     collected_metrics: &mut Vec<metrics::Metrics>,
-    tx: Option<&mpsc::UnboundedSender<metrics::Metrics>>,
 ) {
-    while let Some((mut metrics, result)) = stream.next().await {
-        // Only clone and send if tx is provided
-        if let Some(sender) = tx {
-            sender.send(metrics.clone()).ok();
-        }
-        metrics.content = None;
-        metrics.reasoning = None;
-        collected_metrics.push(metrics);
-
-        match result {
-            Ok(_) => *completed_tasks += 1,
-            Err(e) => {
+    while let Some(metrics_list) = stream.next().await {
+        for mut metrics in metrics_list {
+            // Track failures based on error_msg in metrics
+            if metrics.error_msg.is_some() {
                 *failed_tasks += 1;
-                error!("Task failed: {}", e);
+            } else {
+                *completed_tasks += 1;
             }
+            metrics.content = None;
+            metrics.reasoning = None;
+            collected_metrics.push(metrics);
         }
     }
 }
@@ -52,7 +46,8 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let mut stream = prompt::create_task_stream(&app_config)?;
+    let task_stream = prompt::create_task_stream(&app_config)?;
+    let mut stream = task_stream.stream;
 
     // Clone cli_config for later use after stream is done
     let cli_config = app_config.cli_config.clone();
@@ -65,12 +60,10 @@ async fn main() -> Result<()> {
     let mut collected_metrics = Vec::new();
 
     // Set up channel and saver only if results_dir is specified
-    let (tx, saver_handle) = if let Some(ref results_saver) = app_config.results_saver {
-        let (tx, rx) = mpsc::unbounded_channel();
-        let handle = token_benchmark::file::setup_streaming_saver(results_saver, rx);
-        (Some(tx), handle)
+    let saver_handle = if let Some(ref results_saver) = app_config.results_saver {
+        token_benchmark::file::setup_streaming_saver(results_saver, task_stream.receiver)
     } else {
-        (None, None)
+        None
     };
 
     // Process stream with optional timeout
@@ -79,7 +72,6 @@ async fn main() -> Result<()> {
         &mut completed_tasks,
         &mut failed_tasks,
         &mut collected_metrics,
-        tx.as_ref(),
     );
 
     let timed_out = if app_config.cli_config.timeout == 0 {
@@ -99,9 +91,6 @@ async fn main() -> Result<()> {
             .progress_bar
             .finish_with_message("Task processing completed");
     }
-
-    // Drop the sender to signal completion to the saver task
-    drop(tx);
 
     let elapsed = time.elapsed();
 
