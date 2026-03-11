@@ -59,12 +59,16 @@ async fn main() -> Result<()> {
     let mut failed_tasks = 0u32;
     let mut collected_metrics = Vec::new();
 
+    let (sender, receiver) = (task_stream.sender, task_stream.receiver);
+
     // Set up channel and saver only if results_dir is specified
     let saver_handle = if let Some(ref results_saver) = app_config.results_saver {
-        token_benchmark::file::setup_streaming_saver(results_saver, task_stream.receiver)
+        token_benchmark::file::setup_streaming_saver(results_saver, receiver)
     } else {
         None
     };
+
+    drop(sender);
 
     // Process stream with optional timeout
     let process = process_stream(
@@ -133,6 +137,8 @@ async fn main() -> Result<()> {
 
     // Display summary metrics
     println!("{}", serde_json::to_string_pretty(&summary)?);
+
+    drop(stream);
 
     // Wait for the streaming saver to complete and log any errors
     if let Some(handle) = saver_handle {
