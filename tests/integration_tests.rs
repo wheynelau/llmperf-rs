@@ -1,4 +1,5 @@
 use serde_json::json;
+use std::sync::Arc;
 use std::time::Duration;
 use token_benchmark::api::chat;
 use token_benchmark::api::models::{ChatCompletionRequest, FinishReason, Request};
@@ -306,8 +307,8 @@ async fn test_check_endpoint_success() {
 
     let result = chat::check_endpoint(
         &format!("{}/", mock_server.uri()),
-        "gpt-3.5-turbo".to_string(),
-        Some("test-key".to_string()),
+        "gpt-3.5-turbo",
+        Some("test-key"),
     )
     .await;
 
@@ -332,8 +333,8 @@ async fn test_check_endpoint_wrong_model() {
 
     let result = chat::check_endpoint(
         &format!("{}/", mock_server.uri()),
-        "non-existent-model".to_string(),
-        Some("test-key".to_string()),
+        "non-existent-model",
+        Some("test-key"),
     )
     .await;
 
@@ -356,8 +357,8 @@ async fn test_check_usage() {
 
     let result = chat::check_endpoint(
         &format!("{}/", mock_server.uri()),
-        "gpt-3.5-turbo".to_string(),
-        Some("invalid-key".to_string()),
+        "gpt-3.5-turbo",
+        Some("invalid-key"),
     )
     .await;
 
@@ -548,12 +549,12 @@ async fn test_chat_completions_with_reasoning_tokens() {
     );
     assert_eq!(
         metrics.content,
-        Some(" of physics are speed".to_string()),
+        Some(Arc::from(" of physics are speed")),
         "Content mismatch"
     );
     assert_eq!(
         metrics.reasoning,
-        Some("Okay, the point".to_string()),
+        Some(Arc::from("Okay, the point")),
         "Reasoning mismatch"
     );
 }

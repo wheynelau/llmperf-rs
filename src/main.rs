@@ -1,6 +1,5 @@
 use anyhow::Result;
 use futures::StreamExt;
-use indicatif::ProgressBar;
 use log::{error, info, warn};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant, timeout};
@@ -12,7 +11,6 @@ use token_benchmark::prompt;
 
 async fn process_stream(
     stream: &mut (impl StreamExt<Item = (metrics::Metrics, Result<()>)> + Unpin),
-    pb: &ProgressBar,
     completed_tasks: &mut u32,
     failed_tasks: &mut u32,
     collected_metrics: &mut Vec<metrics::Metrics>,
@@ -34,13 +32,25 @@ async fn process_stream(
                 error!("Task failed: {}", e);
             }
         }
-        pb.inc(1);
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .init();
+
     let app_config = config::load_configuration().await?;
+
+    // Check API endpoint
+    config::check_api_endpoint(
+        &app_config.api_base,
+        &app_config.cli_config.model,
+        app_config.api_key.as_deref(),
+        app_config.cli_config.no_check_endpoint,
+    )
+    .await?;
 
     let mut stream = prompt::create_task_stream(&app_config)?;
 
@@ -48,15 +58,6 @@ async fn main() -> Result<()> {
     let cli_config = app_config.cli_config.clone();
 
     let time = Instant::now();
-
-    // Set up progress bar
-    let pb = ProgressBar::new(app_config.cli_config.max_num_completed_requests as u64);
-    pb.set_style(
-        indicatif::ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})")
-            .expect("Failed to set progress bar style")
-            .progress_chars("#>-"),
-    );
 
     // Process the stream with timeout and track progress
     let mut completed_tasks = 0u32;
@@ -72,13 +73,9 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
-    // Enable the tick for progress bar
-    pb.enable_steady_tick(Duration::from_millis(40));
-
     // Process stream with optional timeout
     let process = process_stream(
         &mut stream,
-        &pb,
         &mut completed_tasks,
         &mut failed_tasks,
         &mut collected_metrics,
@@ -94,9 +91,13 @@ async fn main() -> Result<()> {
     };
 
     if timed_out {
-        pb.abandon_with_message("Timeout reached");
+        app_config
+            .progress_bar
+            .abandon_with_message("Timeout reached");
     } else {
-        pb.finish_with_message("Task processing completed");
+        app_config
+            .progress_bar
+            .finish_with_message("Task processing completed");
     }
 
     // Drop the sender to signal completion to the saver task
@@ -105,7 +106,9 @@ async fn main() -> Result<()> {
     let elapsed = time.elapsed();
 
     // Always display results and process collected metrics
-    if completed_tasks + failed_tasks == app_config.cli_config.max_num_completed_requests {
+    if completed_tasks + failed_tasks
+        == app_config.cli_config.max_num_completed_requests * app_config.cli_config.multi_turn
+    {
         info!("All tasks completed successfully!");
     } else {
         warn!(
@@ -140,7 +143,7 @@ async fn main() -> Result<()> {
     let summary = summary_builder.build();
 
     // Display summary metrics
-    println!("\n{:#?}", summary);
+    println!("{}", serde_json::to_string_pretty(&summary)?);
 
     // Wait for the streaming saver to complete and log any errors
     if let Some(handle) = saver_handle {
