@@ -2,7 +2,7 @@ use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use token_benchmark::api::chat;
-use token_benchmark::api::models::{ChatCompletionRequest, FinishReason, Request};
+use token_benchmark::api::models::{ChatCompletionRequest, FinishReason, Message, Request};
 use token_benchmark::metrics::models::Metrics;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -30,8 +30,16 @@ async fn test_chat_completions_1_token_no_usage() {
         .await;
 
     // Create test request
-    let chat_completion =
-        ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true, false);
+    let chat_completion = ChatCompletionRequest::from_messages(
+        "test-model",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("Say hello"),
+        }],
+        10,
+        true,
+        false,
+    );
 
     let request = Request {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
@@ -113,8 +121,16 @@ async fn test_chat_completions_n_tokens_no_usage() {
         .await;
 
     // Create test request
-    let chat_completion =
-        ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true, false);
+    let chat_completion = ChatCompletionRequest::from_messages(
+        "test-model",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("Say hello"),
+        }],
+        10,
+        true,
+        false,
+    );
 
     let request = Request {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
@@ -196,14 +212,21 @@ async fn test_chat_completions_n_tokens_with_usage() {
         .await;
 
     // Create test request
-    let chat_completion =
-        ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true, false);
+    let chat_completion = ChatCompletionRequest::from_messages(
+        "test-model",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("Say hello"),
+        }],
+        10,
+        true,
+        false,
+    );
 
     let request = Request {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
-        ..Default::default()
     };
 
     let mut metrics = Metrics {
@@ -266,13 +289,21 @@ async fn test_chat_completions_http_error() {
         .mount(&mock_server)
         .await;
 
-    let chat_completion = ChatCompletionRequest::from_prompt("test-model", "Test", 10, true, false);
+    let chat_completion = ChatCompletionRequest::from_messages(
+        "test-model",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("Test"),
+        }],
+        10,
+        true,
+        false,
+    );
 
     let request = Request {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
-        ..Default::default()
     };
 
     let mut metrics = Metrics::default();
@@ -392,14 +423,21 @@ async fn test_chat_completions_n_tokens_with_usage_stop_reason_length() {
         .await;
 
     // Create test request
-    let chat_completion =
-        ChatCompletionRequest::from_prompt("test-model", "Say hello", 10, true, false);
+    let chat_completion = ChatCompletionRequest::from_messages(
+        "test-model",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("Say hello"),
+        }],
+        10,
+        true,
+        false,
+    );
 
     let request = Request {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
-        ..Default::default()
     };
     let mut metrics = Metrics {
         number_input_tokens: 999,
@@ -487,9 +525,12 @@ async fn test_chat_completions_with_reasoning_tokens() {
         .await;
 
     // Create test request
-    let chat_completion = ChatCompletionRequest::from_prompt(
+    let chat_completion = ChatCompletionRequest::from_messages(
         "test-model",
-        "Explain the theory of relativity",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("Explain the theory of relativity"),
+        }],
         1500,
         true,
         false,
@@ -499,7 +540,6 @@ async fn test_chat_completions_with_reasoning_tokens() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
-        ..Default::default()
     };
 
     let mut metrics = Metrics {

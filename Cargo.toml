@@ -1,6 +1,6 @@
 [package]
 name = "llmperf"
-version = "0.3.2-beta.1"
+version = "0.4.0-beta.1"
 edition = "2024"
 repository = "https://github.com/wheynelau/llmperf-rs"
 description = "A benchmarking tool for large language model (LLM) inference performance."
@@ -41,6 +41,5 @@ lto = "fat"
 codegen-units = 1
 strip = true
 
-# don't mind if release is a little less optimised, mainly for local tests
 [profile.release]
 lto = "thin"
