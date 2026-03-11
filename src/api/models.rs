@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FinishReason {
-    #[serde(rename = "stop")]
+    #[serde(rename = "stop", alias = "max_tokens")]
     Stop,
-    #[serde(rename = "length")]
+    #[serde(rename = "length", alias = "end_turn")]
     Length,
 }
 
@@ -27,8 +28,9 @@ pub struct StreamChoice {
     pub index: u32,
     pub delta: StreamDelta,
     pub logprobs: Option<serde_json::Value>,
+    // stop reason is for anthropic
+    #[serde(alias = "stop_reason")]
     pub finish_reason: Option<FinishReason>,
-    pub stop_reason: Option<serde_json::Value>,
     pub token_ids: Option<serde_json::Value>,
 }
 
@@ -79,7 +81,7 @@ impl Request {
         }
     }
 }
-
+/// This is the body of the request for openai completions
 #[derive(Serialize, Default)]
 pub struct ChatCompletionRequest {
     pub model: String,
@@ -113,7 +115,7 @@ impl ChatCompletionRequest {
             // },
             Message {
                 role: "user".to_string(),
-                content: prompt,
+                content: Arc::from(prompt),
             },
         ];
 
@@ -135,12 +137,37 @@ impl ChatCompletionRequest {
             chat_template_kwargs,
         }
     }
+
+    /// Creates a ChatCompletionRequest with existing messages (for multi-turn conversations)
+    pub fn from_messages(
+        model: impl Into<String>,
+        messages: Vec<Message>,
+        max_tokens: u32,
+        stream: bool,
+        thinking: bool,
+    ) -> Self {
+        let chat_template_kwargs = if !thinking {
+            Some(ChatTemplateKwargs::new(thinking))
+        } else {
+            None
+        };
+        ChatCompletionRequest {
+            model: model.into(),
+            messages,
+            max_tokens,
+            stream,
+            stream_options: StreamOptions {
+                include_usage: true,
+            },
+            chat_template_kwargs,
+        }
+    }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct Message {
     pub role: String,
-    pub content: String,
+    pub content: Arc<str>,
 }
 
 #[derive(Debug, Deserialize)]

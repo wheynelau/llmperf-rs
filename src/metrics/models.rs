@@ -1,8 +1,9 @@
-use super::utils::calculate_percentiles_f64;
+use super::utils::{calculate_percentiles_f64, calculate_percentiles_ord};
 use crate::api::models::FinishReason;
 use crate::args::Cli;
 use serde::{Deserialize, Serialize};
 use serde_with::with_prefix;
+use std::sync::Arc;
 
 #[derive(Default, Serialize, Debug)]
 pub struct DetailedStats<T> {
@@ -17,36 +18,6 @@ pub struct DetailedStats<T> {
     pub stddev: f64,
     pub min: T,
     pub max: T,
-}
-
-pub fn calculate_percentiles_ord<T>(vec: &[T]) -> DetailedStats<T>
-where
-    T: Ord + Copy + Into<f64> + Default,
-{
-    if vec.is_empty() {
-        return DetailedStats::default();
-    }
-
-    let min = vec.iter().min().copied().unwrap();
-    let max = vec.iter().max().copied().unwrap();
-
-    // Convert to f64 for statistical calculations and reuse the f64 implementation
-    let float_vec: Vec<f64> = vec.iter().map(|&x| x.into()).collect();
-    let f64_stats = calculate_percentiles_f64(&float_vec);
-
-    DetailedStats {
-        quantiles_p25: f64_stats.quantiles_p25,
-        quantiles_p50: f64_stats.quantiles_p50,
-        quantiles_p75: f64_stats.quantiles_p75,
-        quantiles_p90: f64_stats.quantiles_p90,
-        quantiles_p95: f64_stats.quantiles_p95,
-        quantiles_p99: f64_stats.quantiles_p99,
-        mean: f64_stats.mean,
-        median: f64_stats.median,
-        stddev: f64_stats.stddev,
-        min,
-        max,
-    }
 }
 
 with_prefix!(itl "itl_ms_");
@@ -97,9 +68,11 @@ pub struct Metrics {
     pub error_msg: Option<String>,
     pub error_code: Option<u16>,
     pub decode_throughput_tps: f64,
-    pub content: Option<String>,
-    pub reasoning: Option<String>,
+    pub content: Option<Arc<str>>,
+    pub reasoning: Option<Arc<str>>,
     pub finish_reason: Option<FinishReason>,
+    /// Turn index (0-based). Always 0 for single-turn mode.
+    pub turn_index: usize,
 }
 // Due to complexity, might be better to have a builder
 #[derive(Default)]

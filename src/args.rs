@@ -9,7 +9,11 @@ const MIN_OUTPUT_TOKENS: u32 = 1;
 /// validator for token arguments with a minimum value
 fn validate_tokens(value: &str, field_name: &str, min: u32) -> Result<u32, String> {
     let tokens: u32 = value.parse().map_err(|_| {
-        format!("Invalid value '{}' for --{field_name}: must be a valid number between {min} and 4294967295", value)
+        format!(
+            "Invalid value '{}' for --{field_name}: must be a valid number between {min} and {max}",
+            value,
+            max = u32::MAX
+        )
     })?;
 
     if tokens < min {
@@ -33,6 +37,25 @@ fn validate_mean_output_tokens(value: &str) -> Result<u32, String> {
     validate_tokens(value, "mean-output-tokens", MIN_OUTPUT_TOKENS)
 }
 
+/// validator for multi_turn
+fn validate_multi_turn(value: &str) -> Result<u32, String> {
+    let num_turns: u32 = value.parse().map_err(|_| {
+        format!(
+            "Invalid value '{}' for --multi-turn: must be a positive integer",
+            value
+        )
+    })?;
+
+    if num_turns < 1 {
+        return Err(format!(
+            "Invalid value '{}' for --multi-turn: must be at least 1",
+            value
+        ));
+    }
+
+    Ok(num_turns)
+}
+
 #[derive(Parser, Default, Serialize, Debug, Clone)]
 #[command(
     version,
@@ -44,7 +67,7 @@ pub struct Cli {
     #[arg(long, required = true)]
     pub model: String,
 
-    /// The tokenizer used for calculating the number of input tokens.  
+    /// The tokenizer used for calculating the number of input tokens.
     #[arg(
         long,
         default_value = "hf-internal-testing/llama-tokenizer",
@@ -127,6 +150,16 @@ pub struct Cli {
         long_help = "Disable reasoning on endpoints. The endpoint needs to support chat_template_kwargs, and it sends thinking: false and enable_thinking: false in the request body."
     )]
     pub thinking: bool,
+
+    /// Number of conversation turns for multi-turn benchmarking.
+    /// If not specified, runs single-turn mode.
+    #[arg(
+        long,
+        value_parser = validate_multi_turn,
+        default_value = "1",
+        long_help = "Number of conversation turns for multi-turn benchmarking. Each turn uses the previous response to build the message history. If not specified, runs single-turn mode."
+    )]
+    pub multi_turn: u32,
 }
 
 /// Converts Vec<String> of "key=value" pairs to HashMap<String, String>
