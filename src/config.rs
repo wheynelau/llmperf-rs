@@ -126,8 +126,10 @@ pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
 
     // we could just log everything here first
     info!(
-        "Starting {} tasks with concurrency of {}",
-        &cli_config.max_num_completed_requests, &cli_config.num_concurrent_requests
+        "Starting {total_task} tasks with concurrency of {concurrency} with num_turns {num_turns}",
+        total_task = &cli_config.max_num_completed_requests,
+        concurrency = &cli_config.num_concurrent_requests,
+        num_turns = &cli_config.multi_turn
     );
 
     // Set up the timeout duration (0 means no timeout)

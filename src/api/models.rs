@@ -97,47 +97,6 @@ pub struct StreamOptions {
 }
 
 impl ChatCompletionRequest {
-    pub fn from_prompt(
-        model: impl Into<String>,
-        prompt: impl Into<String>,
-        max_tokens: u32,
-        stream: bool,
-        thinking: bool,
-    ) -> Self {
-        let prompt = prompt.into();
-        // Original llmperf code had the system message, but it doesn't seem to be necessary
-        // Might be a legacy thing
-        // Could add as a config option
-        let messages = vec![
-            // Message {
-            //     role: "system".to_string(),
-            //     content: "".to_string(),
-            // },
-            Message {
-                role: "user".to_string(),
-                content: Arc::from(prompt),
-            },
-        ];
-
-        // Should we still use the ChatTemplateKwargs if thinking?
-        // We don't know if the endpooint would accept these kwargs
-        let chat_template_kwargs = if !thinking {
-            Some(ChatTemplateKwargs::new(thinking))
-        } else {
-            None
-        };
-        ChatCompletionRequest {
-            model: model.into(),
-            messages,
-            max_tokens,
-            stream,
-            stream_options: StreamOptions {
-                include_usage: true,
-            },
-            chat_template_kwargs,
-        }
-    }
-
     /// Creates a ChatCompletionRequest with existing messages (for multi-turn conversations)
     pub fn from_messages(
         model: impl Into<String>,

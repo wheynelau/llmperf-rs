@@ -114,7 +114,9 @@ impl ResultsSaver {
             count += 1;
         }
 
-        // Flush on completion (writer auto-flushes on drop via auto_finish for zstd)
+        // Explicitly flush to ensure all data is written and zstd stream is finalized
+        writer.flush()?;
+
         Ok(count)
     }
 
