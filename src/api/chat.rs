@@ -12,6 +12,8 @@ use crate::metrics::{
 
 /// Estimated average bytes per token for string capacity pre-allocation
 const AVG_BYTES_PER_TOKEN: usize = 5;
+/// Length to truncate when printing and showing to user
+const TRUNCATED_LIMIT: usize = 200;
 
 /// Extract error message from response body, handling OpenAI-style error format
 fn extract_error_message(body_str: &str) -> String {
@@ -22,8 +24,8 @@ fn extract_error_message(body_str: &str) -> String {
         return msg.to_string();
     }
     // Fallback to raw preview
-    if body_str.len() > 200 {
-        format!("{}...", &body_str[..200])
+    if body_str.len() > TRUNCATED_LIMIT {
+        format!("{}...", &body_str[..TRUNCATED_LIMIT])
     } else {
         body_str.to_string()
     }
@@ -58,10 +60,9 @@ async fn handle_error(
                     format!("HTTP {} - could not read response body", status)
                 }
             };
-            metrics.error_msg = Some(error_msg.clone());
-            eventsource_client::Error::HttpStream(
-                anyhow::anyhow!("Unexpected HTTP response: {}", error_msg).into(),
-            )
+            let err = anyhow::anyhow!("Unexpected HTTP response: {}", error_msg);
+            metrics.error_msg = Some(error_msg);
+            eventsource_client::Error::HttpStream(err.into())
         }
         _ => {
             metrics.error_code = None;
@@ -211,7 +212,8 @@ pub async fn chat_completions(
         };
         let e2e_time = prefill_start.elapsed();
 
-        metrics.prefill_throughput_tps = calculate_prefill_tps(&ttft, metrics.number_input_tokens);
+        metrics.prefill_throughput_tps =
+            calculate_prefill_tps(ttft.as_ref(), metrics.number_input_tokens);
         metrics.decode_throughput_tps = calculate_decode_tps(&itl);
         metrics.end_to_end_latency_s = e2e_time.as_secs_f64();
 
@@ -224,8 +226,8 @@ pub async fn chat_completions(
 /// Checks if the model is in the list of available models
 pub async fn check_endpoint(
     url: &str,
-    model: String,
-    api_key: Option<String>,
+    model: &str,
+    api_key: Option<&str>,
 ) -> Result<String, anyhow::Error> {
     // Construct the models endpoint URL
     let models_endpoint = format!("{}/models", url.trim_end_matches('/'));

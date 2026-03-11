@@ -102,4 +102,8 @@ test_tokenizer!(gemma_tokenizer, "OpenMeditron/Meditron3-Gemma2-2B");
 
 test_tokenizer!(baichuan_tokenizer, "baichuan-inc/Baichuan-M2-32B");
 
+// This tokenizer fails occasionally.
+// They have tokens for "'OR'" and "O","R"
+// And due to the tokenization, this sequence "'O'", "'Repeat'",
+// Becomes "'OR'", "'e'", "'peat'",
 test_tokenizer!(ouro_tokenizer, "ByteDance/Ouro-1.4B");

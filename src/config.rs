@@ -1,18 +1,21 @@
 use crate::api::check_endpoint;
+use crate::args::Cli;
 use crate::file::{ResultsSaver, load_tokenizer};
 use anyhow::Result;
 use clap::Parser;
+use indicatif::ProgressBar;
 use log::{info, warn};
 use tokio::time::Duration;
 
+#[derive(Clone)]
 pub struct AppConfig {
     pub cli_config: crate::args::Cli,
     pub tokenizer: tokenizers::Tokenizer,
     pub api_key: Option<String>,
     pub api_base: String,
     pub api_timeout: Duration,
-    pub model: String,
     pub results_saver: Option<ResultsSaver>,
+    pub progress_bar: ProgressBar,
 }
 
 fn load_and_validate_tokenizer(config: &crate::args::Cli) -> Result<tokenizers::Tokenizer> {
@@ -32,10 +35,10 @@ fn load_and_validate_tokenizer(config: &crate::args::Cli) -> Result<tokenizers::
     Ok(tokenizer)
 }
 
-async fn check_api_endpoint(
+pub async fn check_api_endpoint(
     url: &str,
-    model: String,
-    api_key: Option<String>,
+    model: &str,
+    api_key: Option<&str>,
     skip_check: bool,
 ) -> Result<()> {
     if skip_check {
@@ -84,17 +87,21 @@ fn parse_environment_variables() -> Result<(Option<String>, String, Duration)> {
     Ok((api_key, url, api_timeout))
 }
 
-/// Init the logger
-fn init_logger() {
-    env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Info)
-        .init();
+fn build_progress_bar(cli_config: &Cli) -> Result<ProgressBar, anyhow::Error> {
+    // Set up progress bar — total is requests * turns since each turn increments by 1
+    let total_turns = cli_config.max_num_completed_requests * cli_config.multi_turn;
+    let pb = ProgressBar::new(total_turns as u64);
+    pb.set_style(
+        indicatif::ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})")?
+            .progress_chars("#>-"),
+    );
+    pb.enable_steady_tick(Duration::from_millis(40));
+    Ok(pb)
 }
 
 // This function should handle all the preflight tasks
 pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
-    init_logger();
-
     // Parse CLI arguments
     let cli_config = crate::args::Cli::parse();
 
@@ -104,22 +111,11 @@ pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
     // Load and validate tokenizer
     let tokenizer = load_and_validate_tokenizer(&cli_config)?;
 
-    // Check API endpoint
-    check_api_endpoint(
-        &api_base,
-        cli_config.model.clone(),
-        api_key.clone(),
-        cli_config.no_check_endpoint,
-    )
-    .await?;
-
-    let model = cli_config.model.clone();
-
     // Initialize results saver
     let results_saver = if let Some(ref results_dir) = cli_config.results_dir {
         Some(ResultsSaver::try_new(
             results_dir,
-            &model,
+            &cli_config.model,
             cli_config.mean_input_tokens,
             cli_config.mean_output_tokens,
         )?)
@@ -130,8 +126,10 @@ pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
 
     // we could just log everything here first
     info!(
-        "Starting {} tasks with concurrency of {}",
-        &cli_config.max_num_completed_requests, &cli_config.num_concurrent_requests
+        "Starting {total_task} tasks with concurrency of {concurrency} with num_turns {num_turns}",
+        total_task = &cli_config.max_num_completed_requests,
+        concurrency = &cli_config.num_concurrent_requests,
+        num_turns = &cli_config.multi_turn
     );
 
     // Set up the timeout duration (0 means no timeout)
@@ -144,13 +142,15 @@ pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
         );
     }
 
+    let progress_bar = build_progress_bar(&cli_config)?;
+
     Ok(AppConfig {
         cli_config,
         tokenizer,
         api_key,
         api_base,
         api_timeout,
-        model,
         results_saver,
+        progress_bar,
     })
 }

@@ -4,3 +4,4 @@ pub mod config;
 pub mod file;
 pub mod metrics;
 pub mod prompt;
+pub mod session;

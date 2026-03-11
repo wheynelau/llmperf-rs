@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FinishReason {
-    #[serde(rename = "stop")]
+    #[serde(rename = "stop", alias = "max_tokens")]
     Stop,
-    #[serde(rename = "length")]
+    #[serde(rename = "length", alias = "end_turn")]
     Length,
 }
 
@@ -27,8 +28,9 @@ pub struct StreamChoice {
     pub index: u32,
     pub delta: StreamDelta,
     pub logprobs: Option<serde_json::Value>,
+    // stop reason is for anthropic
+    #[serde(alias = "stop_reason")]
     pub finish_reason: Option<FinishReason>,
-    pub stop_reason: Option<serde_json::Value>,
     pub token_ids: Option<serde_json::Value>,
 }
 
@@ -79,7 +81,7 @@ impl Request {
         }
     }
 }
-
+/// This is the body of the request for openai completions
 #[derive(Serialize, Default)]
 pub struct ChatCompletionRequest {
     pub model: String,
@@ -95,30 +97,14 @@ pub struct StreamOptions {
 }
 
 impl ChatCompletionRequest {
-    pub fn from_prompt(
+    /// Creates a ChatCompletionRequest with existing messages (for multi-turn conversations)
+    pub fn from_messages(
         model: impl Into<String>,
-        prompt: impl Into<String>,
+        messages: Vec<Message>,
         max_tokens: u32,
         stream: bool,
         thinking: bool,
     ) -> Self {
-        let prompt = prompt.into();
-        // Original llmperf code had the system message, but it doesn't seem to be necessary
-        // Might be a legacy thing
-        // Could add as a config option
-        let messages = vec![
-            // Message {
-            //     role: "system".to_string(),
-            //     content: "".to_string(),
-            // },
-            Message {
-                role: "user".to_string(),
-                content: prompt,
-            },
-        ];
-
-        // Should we still use the ChatTemplateKwargs if thinking?
-        // We don't know if the endpooint would accept these kwargs
         let chat_template_kwargs = if !thinking {
             Some(ChatTemplateKwargs::new(thinking))
         } else {
@@ -137,10 +123,10 @@ impl ChatCompletionRequest {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct Message {
     pub role: String,
-    pub content: String,
+    pub content: Arc<str>,
 }
 
 #[derive(Debug, Deserialize)]
