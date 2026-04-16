@@ -11,17 +11,17 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0.102"
+async-stream = "0.3"
 chrono = "0.4.44"
 clap = { version = "4.6.1", features = ["derive"] }
 env_logger = "0.11.10"
-eventsource-client = "0.16.2"
 futures = "0.3"
 indicatif = { version = "0.18.4"}
 log = "0.4.29"
 rand = "0.9.4"
 rand_distr = "0.5.1"
 regex = "1.12.3"
-reqwest = { version = "0.12.28", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12.28", features = ["json", "rustls-tls", "stream"], default-features = false }
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde_json = "1.0.149"
 serde_with = "3.18.0"
