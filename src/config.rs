@@ -15,6 +15,7 @@ pub struct AppConfig {
     pub api_base: String,
     pub api_timeout: Duration,
     pub results_saver: Option<ResultsSaver>,
+    pub db_pool: Option<sqlx::PgPool>,
     pub progress_bar: ProgressBar,
 }
 
@@ -124,6 +125,17 @@ pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
         None
     };
 
+    // Initialise database connection if db_url is provided
+    let db_pool = if let Some(ref url) = cli_config.db_url {
+        info!("Connecting to database...");
+        // Connect early to fail early if we are unable to connect
+        let pool = crate::db::connect(url).await?;
+        info!("Database connected and schema ready.");
+        Some(pool)
+    } else {
+        None
+    };
+
     // we could just log everything here first
     info!(
         "Starting {total_task} tasks with concurrency of {concurrency} with num_turns {num_turns}",
@@ -151,6 +163,7 @@ pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
         api_base,
         api_timeout,
         results_saver,
+        db_pool,
         progress_bar,
     })
 }

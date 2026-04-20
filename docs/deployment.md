@@ -12,6 +12,8 @@ docker pull ghcr.io/wheynelau/llmperf-rs:latest
 
 If you want to save the files, you should handle the volume mounts accordingly.
 
+Since version 0.6: You can specify all values in `env`.
+
 ```yaml
 apiVersion: batch/v1
 kind: Job
@@ -28,7 +30,18 @@ spec:
           env:
             - name: OPENAI_API_BASE
               value: "http://myapp:8080/v1"
+            - name: DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: llmperf-secrets
+                  key: db-url
+          # Or load all env vars from a secret (like .env):
+          # envFrom:
+          #   - secretRef:
+          #       name: llmperf-secrets
           args:
             - --model=Qwen/Qwen3-0.6B
             - --tokenizer=Qwen/Qwen3-0.6B
 ```
+
+Since version 0.6

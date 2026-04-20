@@ -5,10 +5,13 @@
 # ]
 # ///
 
-# need 3.14 due to zstd, 3.12 is an option but not provided here
+# need 3.14 due to zstd support, 3.12 is an option but not provided here
+# Its best to run this with uv, because it locks the version
+# `uv run compare_results.py`
 
-import os
 import json
+import os
+
 import pandas as pd
 
 

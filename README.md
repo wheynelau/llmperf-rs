@@ -2,6 +2,8 @@
 
 A Rust-based tool for running token throughput and latency benchmarks on language models.
 
+[Blog](https://wheynelau.dev/posts/2025-12-15-benchmarking-performance/)
+
 ## Installation
 
 ### From releases
@@ -105,4 +107,3 @@ As such, there could be a missing token for `</think>` but I will have to do mor
 - llamacpp: Same as vLLM
 
 _Note: server was ran with `reasoning-format : deepseek`_
-
