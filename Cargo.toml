@@ -13,7 +13,7 @@ path = "src/lib.rs"
 anyhow = "1.0.102"
 async-stream = "0.3"
 chrono = "0.4.44"
-clap = { version = "4.6.1", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive", "env"] }
 env_logger = "0.11.10"
 futures = "0.3"
 indicatif = { version = "0.18.4"}
@@ -25,14 +25,20 @@ reqwest = { version = "0.12.28", features = ["json", "rustls-tls", "stream"], de
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde_json = "1.0.149"
 serde_with = "3.18.0"
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json", "macros"] }
 statrs = "0.18.0"
 tokenizers = { version = "0.22.2", features = ["hf-hub", "http", "rustls-tls"] }
 tokio = { version = "1.52.0", features = ["full"] }
 zstd = "0.13"
 
+[[bench]]
+name = "sampling_comparison"
+harness = false
+
 [dev-dependencies]
 wiremock = "0.6"
 tokio-test = "0.4"
+criterion = "0.8.2"
 
 # The profile that 'dist' will build with
 [profile.dist]

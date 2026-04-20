@@ -78,7 +78,7 @@ fn benchmark_sampling(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("rejection", "mean_1000_stddev_100_min_1"),
         &(1000, 100, 1),
-        |b, &(mean, stddev, min)| {
+        |b: &mut criterion::Bencher, &(mean, stddev, min)| {
             b.iter(|| sample_rejection(black_box(mean), black_box(stddev), black_box(min)));
         },
     );
@@ -86,7 +86,7 @@ fn benchmark_sampling(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("inverse_cdf", "mean_1000_stddev_100_min_1"),
         &(1000, 100, 1),
-        |b, &(mean, stddev, min)| {
+        |b: &mut criterion::Bencher, &(mean, stddev, min)| {
             b.iter(|| sample_inverse_cdf(black_box(mean), black_box(stddev), black_box(min)));
         },
     );
@@ -94,7 +94,7 @@ fn benchmark_sampling(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("ppf", "mean_1000_stddev_100_min_1"),
         &(1000, 100, 1),
-        |b, &(mean, stddev, min)| {
+        |b: &mut criterion::Bencher, &(mean, stddev, min)| {
             b.iter(|| sample_ppf(black_box(mean), black_box(stddev), black_box(min)));
         },
     );
@@ -103,7 +103,7 @@ fn benchmark_sampling(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("rejection", "mean_100_stddev_50_min_50"),
         &(100, 50, 50),
-        |b, &(mean, stddev, min)| {
+        |b: &mut criterion::Bencher, &(mean, stddev, min)| {
             b.iter(|| sample_rejection(black_box(mean), black_box(stddev), black_box(min)));
         },
     );
@@ -111,7 +111,7 @@ fn benchmark_sampling(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("inverse_cdf", "mean_100_stddev_50_min_50"),
         &(100, 50, 50),
-        |b, &(mean, stddev, min)| {
+        |b: &mut criterion::Bencher, &(mean, stddev, min)| {
             b.iter(|| sample_inverse_cdf(black_box(mean), black_box(stddev), black_box(min)));
         },
     );
@@ -119,7 +119,7 @@ fn benchmark_sampling(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("ppf", "mean_100_stddev_50_min_50"),
         &(100, 50, 50),
-        |b, &(mean, stddev, min)| {
+        |b: &mut criterion::Bencher, &(mean, stddev, min)| {
             b.iter(|| sample_ppf(black_box(mean), black_box(stddev), black_box(min)));
         },
     );
@@ -128,7 +128,7 @@ fn benchmark_sampling(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("rejection", "mean_100_stddev_30_min_150"),
         &(100, 30, 150),
-        |b, &(mean, stddev, min)| {
+        |b: &mut criterion::Bencher, &(mean, stddev, min)| {
             b.iter(|| sample_rejection(black_box(mean), black_box(stddev), black_box(min)));
         },
     );
@@ -136,7 +136,7 @@ fn benchmark_sampling(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("inverse_cdf", "mean_100_stddev_30_min_150"),
         &(100, 30, 150),
-        |b, &(mean, stddev, min)| {
+        |b: &mut criterion::Bencher, &(mean, stddev, min)| {
             b.iter(|| sample_inverse_cdf(black_box(mean), black_box(stddev), black_box(min)));
         },
     );
@@ -144,7 +144,7 @@ fn benchmark_sampling(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("ppf", "mean_100_stddev_30_min_150"),
         &(100, 30, 150),
-        |b, &(mean, stddev, min)| {
+        |b: &mut criterion::Bencher, &(mean, stddev, min)| {
             b.iter(|| sample_ppf(black_box(mean), black_box(stddev), black_box(min)));
         },
     );
@@ -153,7 +153,7 @@ fn benchmark_sampling(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("rejection", "mean_100_stddev_0_min_1"),
         &(100, 0, 1),
-        |b, &(mean, stddev, min)| {
+        |b: &mut criterion::Bencher, &(mean, stddev, min)| {
             b.iter(|| sample_rejection(black_box(mean), black_box(stddev), black_box(min)));
         },
     );
@@ -161,7 +161,7 @@ fn benchmark_sampling(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("inverse_cdf", "mean_100_stddev_0_min_1"),
         &(100, 0, 1),
-        |b, &(mean, stddev, min)| {
+        |b: &mut criterion::Bencher, &(mean, stddev, min)| {
             b.iter(|| sample_inverse_cdf(black_box(mean), black_box(stddev), black_box(min)));
         },
     );

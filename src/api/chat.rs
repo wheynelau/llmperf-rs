@@ -61,7 +61,11 @@ pub async fn chat_completions(
         let body_json = serde_json::to_string(&request.chat_completion)?;
         debug!("Sending request to {}: {}", request.url, body_json);
 
-        let client = Client::builder().timeout(*api_timeout).build()?;
+        // add user-agent just for telemetry purposes
+        let client = Client::builder()
+            .timeout(*api_timeout)
+            .user_agent(concat!("llmperf-rs/", env!("CARGO_PKG_VERSION")))
+            .build()?;
 
         let mut req = client
             .post(&request.url)
@@ -183,7 +187,9 @@ pub async fn check_endpoint(
         models_endpoint, masked_key
     );
 
-    let client = Client::new();
+    let client = Client::builder()
+        .user_agent(concat!("llmperf/", env!("CARGO_PKG_VERSION")))
+        .build()?;
     let mut request = client.get(&models_endpoint);
 
     if let Some(key) = api_key {

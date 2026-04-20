@@ -162,5 +162,13 @@ async fn main() -> Result<()> {
         warn!("Failed to save summary: {}", e);
     }
 
+    // Insert summary into database if db_pool is available
+    if let Some(ref pool) = app_config.db_pool {
+        match token_benchmark::db::insert_summary(pool, &summary).await {
+            Ok(()) => info!("Summary inserted into database."),
+            Err(e) => warn!("Failed to insert summary into database: {}", e),
+        }
+    }
+
     Ok(())
 }
