@@ -57,11 +57,41 @@ fn validate_multi_turn(value: &str) -> Result<u32, String> {
     Ok(num_turns)
 }
 
+fn validate_duration(value: &str) -> Result<Duration, String> {
+    let secs = value.parse::<u64>().map_err(|_| {
+        format!(
+            "Invalid value '{}' for --multi-turn: must be a positive integer",
+            value
+        )
+    })?;
+
+    Ok(Duration::from_secs(secs))
+}
+
+/// Converts Vec<String> of "key=value" pairs to HashMap<String, String>
+fn serialize_metadata<S>(metadata: &[String], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut map = HashMap::new();
+    for item in metadata {
+        match item.split_once('=') {
+            Some((k, v)) => {
+                map.insert(k.to_string(), v.to_string());
+            }
+            None => {
+                warn!("Ignoring malformed metadata entry '{item}': expected format 'key=value'");
+            }
+        }
+    }
+    map.serialize(serializer)
+}
+
+/// Run a token throughput and latency benchmark.
 #[derive(Parser, Default, Serialize, Debug, Clone)]
 #[command(
     version,
-    about = "Run a token throughput and latency benchmark.",
-    long_about = None
+    long_about = "Tool for running token benchmarks with synthetic outputs from the sonnet.txt"
 )]
 pub struct Cli {
     /// base_url for openai, recommended to use env variables
@@ -87,9 +117,10 @@ pub struct Cli {
     /// API timeout is per request
     #[arg(long,
         default_value = "600",
-        value_parser = |s: &str| s.parse::<u64>().map(Duration::from_secs),
-        long_help = concat!("Per request timeout, if you are looking for an overall"
-        ," timeout, use the timeout option"), env = "OPENAI_API_TIMEOUT")]
+        value_parser = validate_duration,
+        long_help = concat!(
+            "Per request timeout, if you are looking for an overall",
+            " timeout, use the timeout option"), env = "OPENAI_API_TIMEOUT")]
     #[serde(skip_serializing)]
     pub api_timeout: Duration,
 
@@ -101,7 +132,10 @@ pub struct Cli {
     #[arg(
         long,
         default_value = "hf-internal-testing/llama-tokenizer",
-        long_help = "The tokenizer used for calculating the number of input tokens. The original llmperf code fixes this tokenizer, but you can pass in the path to a local tokenizer.json file or a model identifier from the huggingface hub.",
+        long_help = concat!(
+            "The tokenizer used for calculating the number of input tokens. ",
+            "The original llmperf code fixes this tokenizer, but you can pass in the path to a local tokenizer.json file ",
+            "or a model identifier from the huggingface hub."),
         env
     )]
     pub tokenizer: String,
@@ -119,7 +153,9 @@ pub struct Cli {
         long,
         default_value = "150",
         value_parser = validate_mean_output_tokens,
-        long_help = "The mean number of tokens to generate from each llm request. This is the max_tokens param for the completions API. \nNote that this is not always the number of tokens returned.",
+        long_help = concat!(
+            "The mean number of tokens to generate from each llm request. ",
+            "This is the `max_tokens` param for the completions API."),
         env
     )]
     pub mean_output_tokens: u32,
@@ -145,14 +181,17 @@ pub struct Cli {
     )]
     pub max_num_completed_requests: u32,
 
-    /// Additional sampling params to send with each request to the LLM API.
-    /// No additional sampling params are sent.
-    /// Currently not in use.
-    #[arg(long, default_value = "{}", env)]
+    /// Additional sampling params to send with each request to the LLM API
+    #[arg(
+        long,
+        default_value = "{}",
+        env,
+        long_help = "This sends sampling params to the API. Currently not in use."
+    )]
     pub additional_sampling_params: String,
 
     /// The directory to save the results to. If not specified, results are not saved.
-    #[arg(long, env)]
+    #[arg(long, env, value_hint = clap::ValueHint::DirPath)]
     pub results_dir: Option<String>,
 
     /// The name of the llm api to use. Can select from supported APIs. Only supports `openai` now.
@@ -163,9 +202,9 @@ pub struct Cli {
     #[arg(
         long,
         long_help = concat!(
-    "These will be added to the metadata field of the results. ",
-    "Can be specified multiple times: --metadata name=foo --metadata bar=1 ",
-    "As environment variable: METADATA='name=foo,bar=1' (comma-separated)"),
+            "These will be added to the metadata field of the results. ",
+            "Can be specified multiple times: --metadata name=foo --metadata bar=1 ",
+            "As environment variable: METADATA='name=foo,bar=1' (comma-separated)"),
         value_name = "KEY=VALUE",
         num_args = 0..,
         env)]
@@ -177,7 +216,11 @@ pub struct Cli {
         long,
         default_value = "false",
         action = clap::ArgAction::SetTrue,
-        long_help = "Disable API sanity check before running benchmark.\n\nThis posts a GET request to the /models endpoint to ensure the API is reachable.\nIf your endpoint does not support this, you can disable this check.",
+        long_help = concat!(
+            "Disable API sanity check before running benchmark.\n\n",
+            "This posts a GET request to the /models endpoint to ensure the API is reachable.\n",
+            "If your endpoint does not support this, you can disable this check."
+        ),
         env
     )]
     pub no_check_endpoint: bool,
@@ -187,7 +230,10 @@ pub struct Cli {
         long = "no-thinking",
         default_value = "true",
         action = clap::ArgAction::SetFalse,
-        long_help = "Disable reasoning on endpoints. The endpoint needs to support chat_template_kwargs, and it sends thinking: false and enable_thinking: false in the request body.",
+        long_help = concat!(
+            "Disable reasoning on endpoints. The endpoint needs to support chat_template_kwargs, ",
+            "and it sends thinking: false and enable_thinking: false in the request body."
+        ),
         env
     )]
     pub thinking: bool,
@@ -198,7 +244,11 @@ pub struct Cli {
         long,
         value_parser = validate_multi_turn,
         default_value = "1",
-        long_help = "Number of conversation turns for multi-turn benchmarking. Each turn uses the previous response to build the message history. If not specified, runs single-turn mode.",
+        long_help = concat!(
+            "Number of conversation turns for multi-turn benchmarking. ",
+            "Each turn uses the previous response to build the message history. ",
+            "If not specified, runs single-turn mode."
+        ),
         env
     )]
     pub multi_turn: u32,
@@ -206,29 +256,13 @@ pub struct Cli {
     /// Db url for reporting run
     #[arg(
         long,
-        long_help = "DB Url to report results to, recommend to use EnvVars instead due to secrets",
+        long_help = concat!(
+            "DB Url to report results to, recommend to use EnvVars ",
+            "instead due to secrets"
+        ),
         env,
         hide_env_values = true
     )]
     #[serde(skip_serializing)]
     pub db_url: Option<String>,
-}
-
-/// Converts Vec<String> of "key=value" pairs to HashMap<String, String>
-fn serialize_metadata<S>(metadata: &[String], serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let mut map = HashMap::new();
-    for item in metadata {
-        match item.split_once('=') {
-            Some((k, v)) => {
-                map.insert(k.to_string(), v.to_string());
-            }
-            None => {
-                warn!("Ignoring malformed metadata entry '{item}': expected format 'key=value'");
-            }
-        }
-    }
-    map.serialize(serializer)
 }
