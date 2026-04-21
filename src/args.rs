@@ -64,7 +64,7 @@ fn validate_multi_turn(value: &str) -> Result<u32, String> {
 )]
 pub struct Cli {
     /// The model to use for this load test.
-    #[arg(long, required = true, env = "MODEL")]
+    #[arg(long, required = true, env)]
     pub model: String,
 
     /// The tokenizer used for calculating the number of input tokens.
@@ -72,16 +72,16 @@ pub struct Cli {
         long,
         default_value = "hf-internal-testing/llama-tokenizer",
         long_help = "The tokenizer used for calculating the number of input tokens. The original llmperf code fixes this tokenizer, but you can pass in the path to a local tokenizer.json file or a model identifier from the huggingface hub.",
-        env = "TOKENIZER"
+        env
     )]
     pub tokenizer: String,
 
     /// The mean number of tokens to send in the prompt for the request.
-    #[arg(long, default_value = "550", value_parser = validate_mean_input_tokens, env = "MEAN_INPUT_TOKENS")]
+    #[arg(long, default_value = "550", value_parser = validate_mean_input_tokens, env)]
     pub mean_input_tokens: u32,
 
     /// The standard deviation of number of tokens to send in the prompt for the request.
-    #[arg(long, default_value = "150", env = "STDDEV_INPUT_TOKENS")]
+    #[arg(long, default_value = "150", env)]
     pub stddev_input_tokens: u32,
 
     /// The mean number of tokens to generate from each llm request.
@@ -90,20 +90,20 @@ pub struct Cli {
         default_value = "150",
         value_parser = validate_mean_output_tokens,
         long_help = "The mean number of tokens to generate from each llm request. This is the max_tokens param for the completions API. \nNote that this is not always the number of tokens returned.",
-        env = "MEAN_OUTPUT_TOKENS"
+        env
     )]
     pub mean_output_tokens: u32,
 
     /// The standard deviation on the number of tokens to generate per llm request.
-    #[arg(long, default_value = "80", env = "STDDEV_OUTPUT_TOKENS")]
+    #[arg(long, default_value = "80", env)]
     pub stddev_output_tokens: u32,
 
     /// The number of concurrent requests to send. Its recommended to not set this value too high >10000.
-    #[arg(long, default_value = "10", env = "NUM_CONCURRENT_REQUESTS")]
+    #[arg(long, default_value = "10", env)]
     pub num_concurrent_requests: usize,
 
     /// The hard timeout for the test in seconds. Set to 0 for no timeout.
-    #[arg(long, default_value = "90", env = "TIMEOUT")]
+    #[arg(long, default_value = "90", env)]
     pub timeout: u64,
 
     /// The number of requests to complete before finishing the test.
@@ -111,29 +111,34 @@ pub struct Cli {
         long,
         default_value = "10",
         long_help = "The number of requests to complete before finishing the test. \nNote that it's possible for the test to timeout first.",
-        env = "MAX_NUM_COMPLETED_REQUESTS"
+        env
     )]
     pub max_num_completed_requests: u32,
 
     /// Additional sampling params to send with each request to the LLM API.
     /// No additional sampling params are sent.
     /// Currently not in use.
-    #[arg(long, default_value = "{}", env = "ADDITIONAL_SAMPLING_PARAMS")]
+    #[arg(long, default_value = "{}", env)]
     pub additional_sampling_params: String,
 
     /// The directory to save the results to. If not specified, results are not saved.
-    #[arg(long, env = "RESULTS_DIR")]
+    #[arg(long, env)]
     pub results_dir: Option<String>,
 
     /// The name of the llm api to use. Can select from supported APIs. Only supports `openai` now.
-    #[arg(long, default_value = "openai", env = "LLM_API")]
+    #[arg(long, default_value = "openai", env)]
     pub llm_api: String,
 
     /// Metadata to include in the results, e.g. name=foo,bar=1.
-    /// These will be added to the metadata field of the results.
-    /// Can be specified multiple times: --metadata name=foo --metadata bar=1
-    /// As environment variable: METADATA="name=foo,bar=1" (comma-separated)
-    #[arg(long, value_name = "KEY=VALUE", num_args = 0.., env = "METADATA")]
+    #[arg(
+        long,
+        long_help = concat!(
+    "These will be added to the metadata field of the results. ",
+    "Can be specified multiple times: --metadata name=foo --metadata bar=1 ",
+    "As environment variable: METADATA='name=foo,bar=1' (comma-separated)"),
+        value_name = "KEY=VALUE", 
+        num_args = 0..,
+        env)]
     #[serde(serialize_with = "serialize_metadata")]
     pub metadata: Vec<String>,
 
@@ -143,7 +148,7 @@ pub struct Cli {
         default_value = "false",
         action = clap::ArgAction::SetTrue,
         long_help = "Disable API sanity check before running benchmark.\n\nThis posts a GET request to the /models endpoint to ensure the API is reachable.\nIf your endpoint does not support this, you can disable this check.",
-        env = "NO_CHECK_ENDPOINT"
+        env
     )]
     pub no_check_endpoint: bool,
 
@@ -153,7 +158,7 @@ pub struct Cli {
         default_value = "true",
         action = clap::ArgAction::SetFalse,
         long_help = "Disable reasoning on endpoints. The endpoint needs to support chat_template_kwargs, and it sends thinking: false and enable_thinking: false in the request body.",
-        env = "THINKING"
+        env
     )]
     pub thinking: bool,
 
@@ -164,7 +169,7 @@ pub struct Cli {
         value_parser = validate_multi_turn,
         default_value = "1",
         long_help = "Number of conversation turns for multi-turn benchmarking. Each turn uses the previous response to build the message history. If not specified, runs single-turn mode.",
-        env = "MULTI_TURN"
+        env
     )]
     pub multi_turn: u32,
 
@@ -173,7 +178,8 @@ pub struct Cli {
     #[arg(
         long,
         long_help = "DB Url to report results to, recommend to use EnvVars instead due to secrets",
-        env = "DB_URL"
+        env,
+        hide_env_values = true
     )]
     #[serde(skip_serializing)]
     pub db_url: Option<String>,
