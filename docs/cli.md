@@ -9,18 +9,22 @@ llmperf --model <MODEL> [OPTIONS]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--model` | (required) | Model to benchmark |
+| `--tokenizer` | `hf-internal-testing/llama-tokenizer` | HuggingFace model ID or local path |
 | `--mean-input-tokens` | 550 | Mean input tokens |
 | `--stddev-input-tokens` | 150 | Stddev of input tokens |
 | `--mean-output-tokens` | 150 | Mean output tokens (max_tokens) |
 | `--stddev-output-tokens` | 80 | Stddev of output tokens |
-| `--tokenizer` | `hf-internal-testing/llama-tokenizer` | HuggingFace model ID or local path |
 | `--num-concurrent-requests` | 10 | Concurrent requests |
 | `--max-num-completed-requests` | 10 | Requests to complete before finishing |
-| `--timeout` | 90 | Hard timeout (seconds) |
+| `--timeout` | 90 | Hard timeout in seconds (0 for no timeout) |
 | `--results-dir` | (none) | Directory to save results |
-| `--metadata <K=V>,<K=V>...` | (none) | Metadata key-value pairs |
-| `--no-check-endpoint` | - | Skip `/models` sanity check |
-| `--no-thinking` | - | Disable reasoning |
+| `--metadata <K=V>` | (none) | Metadata key-value pairs (repeatable) |
+| `--no-check-endpoint` | false | Skip `/models` sanity check |
+| `--no-thinking` | true | Disable reasoning (set to disable) |
+| `--multi-turn` | 1 | Number of conversation turns |
+| `--llm-api` | `openai` | LLM API to use |
+| `--additional-sampling-params` | `{}` | Additional sampling params (unused) |
+| `--db-url` | (none) | Database URL for reporting |
 
 ## Examples
 
@@ -36,9 +40,18 @@ llmperf --model Qwen/Qwen3-4B \
   --mean-input-tokens 8192 \
   --results-dir results/
 
+# Multi-turn conversation benchmark
+llmperf --model Qwen/Qwen3-4B \
+  --multi-turn 3 \
+  --mean-input-tokens 1024 \
+  --mean-output-tokens 512 \
+  --max-num-completed-requests 50 \
+  --results-dir results/
+
 # Default with metadata
 llmperf --model Qwen/Qwen3-4B \
-  --metadata experiment=baseline,gpu=A100 \
+  --metadata experiment=baseline \
+  --metadata gpu=A100 \
   --results-dir results/
 ```
 
