@@ -67,7 +67,15 @@ export OPENAI_API_KEY=sk-secret-key
 export HF_TOKEN=hf-abc123
 # HF_HOME, optional, path for downloading tokenizers
 export HF_HOME=/tmp/hf
+# DB_URL, optional, PostgreSQL connection for reporting results
+export DB_URL="postgresql://user:password@host:port/database"
 ```
+
+_Note: On v0.6.0 onwards, all args are part of the env as well, check `-h`_
+
+### Database Reporting
+
+Optionally report benchmark results to a PostgreSQL database by setting `DB_URL`. Results are written to a `benchmark_results` table for centralized tracking and analysis. Use environment variables to avoid exposing credentials in shell history. See `postprocess/from_db.py` for schema details and query examples. For the exact schema, you can take a look at [`db.rs`](./src/db.rs)
 
 ## Roadmap
 
