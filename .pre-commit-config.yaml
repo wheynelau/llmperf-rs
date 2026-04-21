@@ -1,0 +1,14 @@
+repos:
+    - repo: https://github.com/AndrejOrsula/pre-commit-cargo
+      rev: 0.4.0
+      hooks:
+          - id: cargo-fmt
+          - id: cargo-update
+          - id: cargo-clippy
+            args: ["--all-targets", "--all-features"]
+          - id: cargo-check
+            args: ["--all-targets", "--all-features"]
+          - id: cargo-doc
+            args: ["--no-deps", "--document-private-items"]
+          - id: cargo-fix
+            args: ["--allow-dirty", "--allow-staged"]
