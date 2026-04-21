@@ -39,9 +39,9 @@ async fn main() -> Result<()> {
 
     // Check API endpoint
     config::check_api_endpoint(
-        &app_config.api_base,
+        &app_config.cli_config.api_base,
         &app_config.cli_config.model,
-        app_config.api_key.as_deref(),
+        app_config.cli_config.api_key.as_deref(),
         app_config.cli_config.no_check_endpoint,
     )
     .await?;

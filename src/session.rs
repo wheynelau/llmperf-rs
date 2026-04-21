@@ -20,7 +20,6 @@ pub struct MultiTurnSession {
 
 impl MultiTurnSession {
     /// Create a new multi-turn session.
-    ///
     /// Initializes with the first user prompt already in the message history.
     pub fn new(
         num_turns: usize,
@@ -45,7 +44,6 @@ impl MultiTurnSession {
     }
 
     /// Check if all turns have been completed.
-    ///
     /// A session is complete when we've received `num_turns` assistant responses.
     /// Since each turn adds one user message and one assistant message, we check
     /// if the number of assistant messages equals `num_turns`.
@@ -54,7 +52,6 @@ impl MultiTurnSession {
     }
 
     /// Store the assistant's response and optionally advance to the next turn.
-    ///
     /// Appends the assistant's response to the message history. If there are more
     /// turns to complete, appends the String.
     pub fn store_response_and_advance(&mut self, content: Arc<str>, config: &PromptConfig) {

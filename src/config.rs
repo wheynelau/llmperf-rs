@@ -11,9 +11,6 @@ use tokio::time::Duration;
 pub struct AppConfig {
     pub cli_config: crate::args::Cli,
     pub tokenizer: tokenizers::Tokenizer,
-    pub api_key: Option<String>,
-    pub api_base: String,
-    pub api_timeout: Duration,
     pub results_saver: Option<ResultsSaver>,
     pub db_pool: Option<sqlx::PgPool>,
     pub progress_bar: ProgressBar,
@@ -62,32 +59,6 @@ pub async fn check_api_endpoint(
     Ok(())
 }
 
-fn parse_environment_variables() -> Result<(Option<String>, String, Duration)> {
-    let api_key = std::env::var("OPENAI_API_KEY").ok();
-
-    // Read API timeout from environment variable
-    let api_timeout = match std::env::var("OPENAI_API_TIMEOUT") {
-        Ok(v) => match v.parse::<u64>() {
-            Ok(timeout) => timeout,
-            Err(_) => {
-                warn!("Error: OPENAI_API_TIMEOUT='{}' is not a valid integer", v);
-                warn!("Expected format: OPENAI_API_TIMEOUT=600");
-                warn!("Defaulting to 600 seconds");
-                600
-            }
-        },
-        Err(_) => 600,
-    };
-    let api_timeout = Duration::from_secs(api_timeout);
-
-    // Read API base from environment variable
-    let url = std::env::var("OPENAI_BASE_URL")
-        .or_else(|_| std::env::var("OPENAI_API_BASE"))
-        .map_err(|_| anyhow::anyhow!("Neither OPENAI_API_BASE nor OPENAI_BASE_URL is set"))?;
-
-    Ok((api_key, url, api_timeout))
-}
-
 fn build_progress_bar(cli_config: &Cli) -> Result<ProgressBar, anyhow::Error> {
     // Set up progress bar — total is requests * turns since each turn increments by 1
     let total_turns = cli_config.max_num_completed_requests * cli_config.multi_turn;
@@ -105,9 +76,6 @@ fn build_progress_bar(cli_config: &Cli) -> Result<ProgressBar, anyhow::Error> {
 pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
     // Parse CLI arguments
     let cli_config = crate::args::Cli::parse();
-
-    // Parse environment variables
-    let (api_key, api_base, api_timeout) = parse_environment_variables()?;
 
     // Load and validate tokenizer
     let tokenizer = load_and_validate_tokenizer(&cli_config)?;
@@ -159,9 +127,6 @@ pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
     Ok(AppConfig {
         cli_config,
         tokenizer,
-        api_key,
-        api_base,
-        api_timeout,
         results_saver,
         db_pool,
         progress_bar,

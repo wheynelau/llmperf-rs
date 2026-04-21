@@ -337,10 +337,10 @@ pub fn create_task_stream(
 
     let stream = create_session_tasks(
         inputs,
-        config.api_timeout,
+        config.cli_config.api_timeout,
         config.cli_config.num_concurrent_requests,
-        config.api_base.clone(),
-        config.api_key.clone(),
+        config.cli_config.api_base.clone(),
+        config.cli_config.api_key.clone(),
         &config.progress_bar,
         Some(sender.clone()),
     );

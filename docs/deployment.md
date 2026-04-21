@@ -8,6 +8,17 @@ Docker images are available on ghcr.io/wheynelau/llmperf-rs:latest. You can pull
 docker pull ghcr.io/wheynelau/llmperf-rs:latest
 ```
 
+Run the container with environment variables:
+
+```bash
+docker run --rm \
+  -e OPENAI_API_BASE=http://localhost:8080/v1 \
+  -e OPENAI_API_KEY=sk-xxx \
+  ghcr.io/wheynelau/llmperf-rs:latest \
+  --model=Qwen/Qwen3-0.6B \
+  --tokenizer=Qwen/Qwen3-0.6B
+```
+
 ## Kubernetes
 
 If you want to save the files, you should handle the volume mounts accordingly.
