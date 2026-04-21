@@ -43,8 +43,6 @@ llmperf --model my-model --multi-turn 5 --max-num-completed-requests 10
 
 **Key Options**
 - `--multi-turn N`: Number of turns per session (default: 1)
-- `--turn-delay-mean`: Mean delay between turns in seconds (default: 0)
-- `--turn-delay-stddev`: Stddev on turn delay (default: 0)
 
 ### Progress Tracking
 
@@ -77,19 +75,25 @@ For example in one session, this is how the metrics will look like for these par
 
 We assume that the chat template does not contribute additional tokens, then this is how metrics will look like:
 
-Metric 1:
+**Metric 1:**
+```
 input_tokens = 2000
 output_tokens = 100
+```
 
-Metric 2:
+**Metric 2:**
+```
 input_tokens = 2000 + 100 + 2000 = 4100
 output_tokens = 100
+```
 
-...
+**...**
 
-Metric N
-input_tokens = ( 2000 + 100 ) * (N-1) + 2000
+**Metric N:**
+```
+input_tokens = (2000 + 100) × (N-1) + 2000
 output_tokens = 100
+```
 
 Also note that reasoning contents are not included, following some of the guidelines from openai and anthropic. It is common to discard reasoning in the message history.
 Reference: [openai](https://developers.openai.com/api/docs/guides/reasoning#how-reasoning-works) and [anthropic](https://platform.claude.com/docs/en/build-with-claude/extended-thinking#the-context-window-with-extended-thinking)
