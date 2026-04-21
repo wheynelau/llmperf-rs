@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use log::{debug, info, warn};
 use reqwest::Client;
-use std::{error::Error, sync::Once};
+use std::sync::Once;
 use tokio::time::{Duration, Instant};
 
 use super::models::{ModelList, Request, StreamResponse};
@@ -15,6 +15,8 @@ use crate::metrics::{
 const AVG_BYTES_PER_TOKEN: usize = 5;
 /// Length to truncate when printing and showing to user
 const TRUNCATED_LIMIT: usize = 200;
+/// User-agent sent with every outbound request. Telemetry only.
+const USER_AGENT: &str = concat!("llmperf-rs/", env!("CARGO_PKG_VERSION"));
 
 /// Extract error message from response body, handling OpenAI-style error format
 fn extract_error_message(body_str: &str) -> String {
@@ -27,6 +29,31 @@ fn extract_error_message(body_str: &str) -> String {
         format!("{}...", &body_str[..TRUNCATED_LIMIT])
     } else {
         body_str.to_string()
+    }
+}
+
+/// Accumulated state during SSE streaming. Cleared when streaming ends.
+struct StreamState {
+    final_str: String,
+    reasoning_str: String,
+    prefill_start: Instant,
+    ttft: Option<Duration>,
+    prev_token: Option<Instant>,
+    itl: Vec<Duration>,
+    usage_seen: bool,
+}
+
+impl StreamState {
+    fn new(max_tokens: u32) -> Self {
+        Self {
+            final_str: String::with_capacity(max_tokens as usize * AVG_BYTES_PER_TOKEN),
+            reasoning_str: String::new(),
+            prefill_start: Instant::now(),
+            ttft: None,
+            prev_token: None,
+            itl: Vec::with_capacity(max_tokens as usize),
+            usage_seen: false,
+        }
     }
 }
 
@@ -48,55 +75,102 @@ fn process_token_delta(
     }
 }
 
+/// Parse one SSE event payload into state and metrics.
+fn handle_response(data: &str, state: &mut StreamState, metrics: &mut Metrics) {
+    if let Ok(response) = serde_json::from_str::<StreamResponse>(data) {
+        if let Some(choice) = response.choices.first() {
+            if let Some(reasoning) = choice
+                .delta
+                .reasoning
+                .as_deref()
+                .or(choice.delta.reasoning_content.as_deref())
+            {
+                state.reasoning_str.push_str(reasoning);
+                process_token_delta(
+                    Some(reasoning),
+                    &mut state.ttft,
+                    &mut state.prev_token,
+                    &mut state.itl,
+                    state.prefill_start,
+                );
+            }
+            if let Some(content) = &choice.delta.content {
+                state.final_str.push_str(content);
+                process_token_delta(
+                    Some(content.as_str()),
+                    &mut state.ttft,
+                    &mut state.prev_token,
+                    &mut state.itl,
+                    state.prefill_start,
+                );
+            }
+            if choice.finish_reason.is_some() {
+                metrics.finish_reason = choice.finish_reason.clone();
+            }
+        }
+        if let Some(usage) = response.usage {
+            metrics.number_input_tokens = usage.prompt_tokens;
+            metrics.number_output_tokens = usage.completion_tokens;
+            metrics.number_total_tokens = usage.total_tokens;
+            state.usage_seen = true;
+        }
+    }
+}
+
+async fn handle_error_response(
+    response: reqwest::Response,
+    metrics: &mut Metrics,
+) -> anyhow::Error {
+    let status = response.status();
+    metrics.error_code = Some(status.as_u16());
+    let body_str = response.text().await.unwrap_or_default();
+    let msg = extract_error_message(&body_str);
+    let error_msg = format!("HTTP {} - {}", status, msg);
+    info!("API error: {}", error_msg);
+    metrics.error_msg = Some(error_msg.clone());
+    anyhow::anyhow!(error_msg)
+}
+
+async fn send_streaming_request(
+    request: &Request,
+    api_timeout: &Duration,
+) -> Result<reqwest::Response, anyhow::Error> {
+    let body_json = serde_json::to_string(&request.chat_completion)?;
+    debug!("Sending request to {}: {}", request.url, body_json);
+
+    // add user-agent just for telemetry purposes
+    let client = Client::builder()
+        .timeout(*api_timeout)
+        .user_agent(USER_AGENT)
+        .build()?;
+
+    let mut req = client
+        .post(&request.url)
+        .header("Content-Type", "application/json")
+        .body(body_json);
+
+    if let Some(key) = &request.api_key {
+        req = req.header("Authorization", format!("Bearer {}", key));
+    }
+
+    Ok(req.send().await?)
+}
+
 pub async fn chat_completions(
     request: Request,
     metrics: &mut Metrics,
     api_timeout: &Duration,
-) -> Result<(), Box<dyn Error>> {
-    let mut final_str =
-        String::with_capacity(request.chat_completion.max_tokens as usize * AVG_BYTES_PER_TOKEN);
-    let mut reasoning_str = String::new();
-
+) -> Result<(), anyhow::Error> {
     if request.chat_completion.stream {
-        let body_json = serde_json::to_string(&request.chat_completion)?;
-        debug!("Sending request to {}: {}", request.url, body_json);
-
-        // add user-agent just for telemetry purposes
-        let client = Client::builder()
-            .timeout(*api_timeout)
-            .user_agent(concat!("llmperf-rs/", env!("CARGO_PKG_VERSION")))
-            .build()?;
-
-        let mut req = client
-            .post(&request.url)
-            .header("Content-Type", "application/json")
-            .body(body_json);
-
-        if let Some(key) = &request.api_key {
-            req = req.header("Authorization", format!("Bearer {}", key));
-        }
-
-        let response = req.send().await?;
+        let response = send_streaming_request(&request, api_timeout).await?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            metrics.error_code = Some(status.as_u16());
-            let body_str = response.text().await.unwrap_or_default();
-            let msg = extract_error_message(&body_str);
-            let error_msg = format!("HTTP {} - {}", status, msg);
-            info!("API error: {}", error_msg);
-            metrics.error_msg = Some(error_msg.clone());
-            return Err(error_msg.into());
+            return Err(handle_error_response(response, metrics).await);
         }
 
         static WARN_ONCE: Once = Once::new();
-        let mut should_warn_usage_missing = true;
 
-        let prefill_start = Instant::now();
-        let mut ttft: Option<Duration> = None;
-        let mut prev_token: Option<Instant> = None;
-        let mut itl: Vec<Duration> =
-            Vec::with_capacity(request.chat_completion.max_tokens as usize);
+        let mut state = StreamState::new(request.chat_completion.max_tokens);
 
         let stream = sse_stream(response);
         tokio::pin!(stream);
@@ -105,62 +179,29 @@ pub async fn chat_completions(
             match event_result? {
                 Sse::Comment(_) => {}
                 Sse::Done => break,
-                Sse::Event(data) => {
-                    if let Ok(response) = serde_json::from_str::<StreamResponse>(&data) {
-                        if let Some(choice) = response.choices.first() {
-                            if let Some(reasoning) = choice
-                                .delta
-                                .reasoning
-                                .as_deref()
-                                .or(choice.delta.reasoning_content.as_deref())
-                            {
-                                reasoning_str.push_str(reasoning);
-                                process_token_delta(
-                                    Some(reasoning),
-                                    &mut ttft,
-                                    &mut prev_token,
-                                    &mut itl,
-                                    prefill_start,
-                                );
-                            }
-                            if let Some(content) = &choice.delta.content {
-                                final_str.push_str(content);
-                                process_token_delta(
-                                    Some(content.as_str()),
-                                    &mut ttft,
-                                    &mut prev_token,
-                                    &mut itl,
-                                    prefill_start,
-                                );
-                            }
-                            if choice.finish_reason.is_some() {
-                                metrics.finish_reason = choice.finish_reason.clone();
-                            }
-                        }
-                        if let Some(usage) = response.usage {
-                            metrics.number_input_tokens = usage.prompt_tokens;
-                            metrics.number_output_tokens = usage.completion_tokens;
-                            metrics.number_total_tokens = usage.total_tokens;
-                            should_warn_usage_missing = false;
-                        }
-                    }
-                }
+                Sse::Event(data) => handle_response(&data, &mut state, metrics),
             }
         }
 
-        if should_warn_usage_missing {
+        if !state.usage_seen {
             WARN_ONCE.call_once(|| {
                 warn!("Usage stats not provided by endpoint, using input stats. Results may vary");
             });
         }
-        let e2e_time = prefill_start.elapsed();
+        let e2e_time = state.prefill_start.elapsed();
 
         metrics.prefill_throughput_tps =
-            calculate_prefill_tps(ttft.as_ref(), metrics.number_input_tokens);
-        metrics.decode_throughput_tps = calculate_decode_tps(&itl);
+            calculate_prefill_tps(state.ttft.as_ref(), metrics.number_input_tokens);
+        metrics.decode_throughput_tps = calculate_decode_tps(&state.itl);
         metrics.end_to_end_latency_s = e2e_time.as_secs_f64();
 
-        populate_metrics(metrics, ttft, itl, final_str, reasoning_str);
+        populate_metrics(
+            metrics,
+            state.ttft,
+            state.itl,
+            state.final_str,
+            state.reasoning_str,
+        );
     }
     Ok(())
 }
@@ -187,9 +228,7 @@ pub async fn check_endpoint(
         models_endpoint, masked_key
     );
 
-    let client = Client::builder()
-        .user_agent(concat!("llmperf/", env!("CARGO_PKG_VERSION")))
-        .build()?;
+    let client = Client::builder().user_agent(USER_AGENT).build()?;
     let mut request = client.get(&models_endpoint);
 
     if let Some(key) = api_key {

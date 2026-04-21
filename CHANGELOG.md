@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1-rc1] - 2026-04-21
+
+### Changed
+
+- Extract `StreamState` and `handle_response` from the SSE streaming loop.
+- Share the `User-Agent` header across the streaming client and `/models` health check via a `USER_AGENT` const.
+
 ## [0.6.0] - 2026-04-21
 
 ### Added
@@ -26,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Incremental metrics via an `mpsc` sender, allowing results to be streamed out of `run_session` as they arrive.
 
-[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.1-rc1...HEAD
+[0.6.1-rc1]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.0...v0.6.1-rc1
 [0.6.0]: https://github.com/wheynelau/llmperf-rs/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/wheynelau/llmperf-rs/releases/tag/v0.5.0
