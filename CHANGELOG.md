@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-04-21
+
+### Changed
+- Removed env values in arg.rs, left defaults
+- Fix env variables showing in clap help, add `hide_env_values`
+
 ## [0.6.1] - 2026-04-21
 
 ### Changed
@@ -33,7 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Incremental metrics via an `mpsc` sender, allowing results to be streamed out of `run_session` as they arrive.
 
-[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/wheynelau/llmperf-rs/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/wheynelau/llmperf-rs/releases/tag/v0.5.0

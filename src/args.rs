@@ -101,9 +101,7 @@ pub struct Cli {
     #[arg(
         long,
         default_value = "hf-internal-testing/llama-tokenizer",
-        long_help = concat!("The tokenizer used for calculating the number of input tokens. ",
-            "The original llmperf code fixes this tokenizer, but you can pass in the path to a local ",
-            "tokenizer.json file or a model identifier from the huggingface hub."),
+        long_help = "The tokenizer used for calculating the number of input tokens. The original llmperf code fixes this tokenizer, but you can pass in the path to a local tokenizer.json file or a model identifier from the huggingface hub.",
         env
     )]
     pub tokenizer: String,
@@ -121,8 +119,7 @@ pub struct Cli {
         long,
         default_value = "150",
         value_parser = validate_mean_output_tokens,
-        long_help = concat!("The mean number of tokens to generate from each llm request. ",
-            "This is the max_tokens param for the completions API. \nNote that this is not always the number of tokens returned."),
+        long_help = "The mean number of tokens to generate from each llm request. This is the max_tokens param for the completions API. \nNote that this is not always the number of tokens returned.",
         env
     )]
     pub mean_output_tokens: u32,
@@ -163,10 +160,15 @@ pub struct Cli {
     pub llm_api: String,
 
     /// Metadata to include in the results, e.g. name=foo,bar=1.
-    #[arg(long, value_name = "KEY=VALUE", num_args = 0.., env,
-        long_help = concat!("These will be added to the metadata field of the results. ",
-            "Can be specified multiple times: --metadata name=foo --metadata bar=1 ",
-            "As environment variable: METADATA=\"name=foo,bar=1\" (comma-separated)"))]
+    #[arg(
+        long,
+        long_help = concat!(
+    "These will be added to the metadata field of the results. ",
+    "Can be specified multiple times: --metadata name=foo --metadata bar=1 ",
+    "As environment variable: METADATA='name=foo,bar=1' (comma-separated)"),
+        value_name = "KEY=VALUE",
+        num_args = 0..,
+        env)]
     #[serde(serialize_with = "serialize_metadata")]
     pub metadata: Vec<String>,
 
@@ -176,7 +178,7 @@ pub struct Cli {
         default_value = "false",
         action = clap::ArgAction::SetTrue,
         long_help = "Disable API sanity check before running benchmark.\n\nThis posts a GET request to the /models endpoint to ensure the API is reachable.\nIf your endpoint does not support this, you can disable this check.",
-        env,
+        env
     )]
     pub no_check_endpoint: bool,
 
@@ -185,12 +187,8 @@ pub struct Cli {
         long = "no-thinking",
         default_value = "true",
         action = clap::ArgAction::SetFalse,
-        long_help = concat!(
-            "Disable reasoning on endpoints. ",
-            "The endpoint needs to support chat_template_kwargs, ",
-            "and it sends thinking: false and enable_thinking: false in the request body."
-        ),
-        env,
+        long_help = "Disable reasoning on endpoints. The endpoint needs to support chat_template_kwargs, and it sends thinking: false and enable_thinking: false in the request body.",
+        env
     )]
     pub thinking: bool,
 
@@ -200,12 +198,8 @@ pub struct Cli {
         long,
         value_parser = validate_multi_turn,
         default_value = "1",
-        long_help = concat!(
-            "Number of conversation turns for multi-turn benchmarking. ",
-            "Each turn uses the previous response to build the message history. ",
-            "If not specified, runs single-turn mode."
-        ),
-        env,
+        long_help = "Number of conversation turns for multi-turn benchmarking. Each turn uses the previous response to build the message history. If not specified, runs single-turn mode.",
+        env
     )]
     pub multi_turn: u32,
 
