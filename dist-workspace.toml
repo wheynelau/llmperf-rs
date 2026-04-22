@@ -19,6 +19,4 @@ install-updater = false
 post-announce-jobs = ["./docker-publish"]
 # Custom permissions for GitHub Jobs
 github-custom-job-permissions = { "docker-publish" = { packages = "write", contents = "read" } }
-# Whether builds should try to be cached in CI
-cache-builds = true
 
