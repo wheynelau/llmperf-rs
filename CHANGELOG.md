@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.3] - 2026-04-27
+## [0.6.3-rc1] - 2026-04-27
 
 ### Added
 
@@ -50,8 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Incremental metrics via an `mpsc` sender, allowing results to be streamed out of `run_session` as they arrive.
 
-[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.3...HEAD
-[0.6.3]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.2...v0.6.3
+[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.3-rc1...HEAD
+[0.6.3-rc1]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.2...v0.6.3-rc1
 [0.6.2]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/wheynelau/llmperf-rs/compare/v0.5.0...v0.6.0
