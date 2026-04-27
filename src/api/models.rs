@@ -2,11 +2,15 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
 pub enum FinishReason {
-    #[serde(rename = "stop", alias = "max_tokens")]
+    #[serde(alias = "max_tokens")]
     Stop,
-    #[serde(rename = "length", alias = "end_turn")]
+    #[serde(alias = "end_turn")]
     Length,
+    ContentFilter,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Deserialize, Debug)]
@@ -28,9 +32,9 @@ pub struct StreamChoice {
     pub index: u32,
     pub delta: StreamDelta,
     pub logprobs: Option<serde_json::Value>,
-    // stop reason is for anthropic
-    #[serde(alias = "stop_reason")]
     pub finish_reason: Option<FinishReason>,
+    /// Anthropic sends `stop_reason` instead of `finish_reason`
+    pub stop_reason: Option<FinishReason>,
     pub token_ids: Option<serde_json::Value>,
 }
 
@@ -97,7 +101,7 @@ pub struct StreamOptions {
 }
 
 impl ChatCompletionRequest {
-    /// Creates a ChatCompletionRequest with existing messages (for multi-turn conversations)
+    /// Creates a `ChatCompletionRequest` with existing messages (for multi-turn conversations)
     pub fn from_messages(
         model: impl Into<String>,
         messages: Vec<Message>,
@@ -105,10 +109,10 @@ impl ChatCompletionRequest {
         stream: bool,
         thinking: bool,
     ) -> Self {
-        let chat_template_kwargs = if !thinking {
-            Some(ChatTemplateKwargs::new(thinking))
-        } else {
+        let chat_template_kwargs = if thinking {
             None
+        } else {
+            Some(ChatTemplateKwargs::new(thinking))
         };
         ChatCompletionRequest {
             model: model.into(),
