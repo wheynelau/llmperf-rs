@@ -448,14 +448,13 @@ async fn test_chat_completions_n_tokens_with_usage_stop_reason_length() {
     let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
 
     if let Err(ref e) = result {
-        println!("Error details: {:?}", e);
+        println!("Error details: {e:?}");
         println!("Error type: {}", std::any::type_name_of_val(&e));
     }
 
     assert!(
         result.is_ok(),
-        "chat_completions should succeed: {:?}",
-        result
+        "chat_completions should succeed: {result:?}",
     );
 
     // Verify metrics were populated
@@ -551,14 +550,13 @@ async fn test_chat_completions_with_reasoning_tokens() {
     let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
 
     if let Err(ref e) = result {
-        println!("Error details: {:?}", e);
+        println!("Error details: {e:?}");
         println!("Error type: {}", std::any::type_name_of_val(&e));
     }
 
     assert!(
         result.is_ok(),
-        "chat_completions should succeed: {:?}",
-        result
+        "chat_completions should succeed: {result:?}",
     );
 
     // Verify metrics were populated
@@ -596,5 +594,200 @@ async fn test_chat_completions_with_reasoning_tokens() {
         metrics.reasoning,
         Some(Arc::from("Okay, the point")),
         "Reasoning mismatch"
+    );
+}
+
+#[tokio::test]
+async fn test_chat_completions_both_finish_reason_and_stop_reason() {
+    let mock_server = MockServer::start().await;
+
+    let stream_response = concat!(
+        r#"data: {"choices":[{"index":0,"delta":{"content":" Hello"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"content":" World"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"finish_reason":"length","stop_reason":null,"index":0,"delta":{}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{}}],"usage":{"completion_tokens":10,"prompt_tokens":10,"total_tokens":20,"completion_tokens_details":{"reasoning_tokens":0}}}"#,
+        "\r\n\r\n",
+        r#"data: [DONE]"#,
+        "\r\n\r\n",
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("content-type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(stream_response, "text/event-stream"))
+        .mount(&mock_server)
+        .await;
+
+    let chat_completion = ChatCompletionRequest::from_messages(
+        "test-model",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("Say hello"),
+        }],
+        10,
+        true,
+        false,
+    );
+
+    let request = Request {
+        url: format!("{}/v1/chat/completions", mock_server.uri()),
+        api_key: Some("test-key".to_string()),
+        chat_completion,
+    };
+
+    let mut metrics = Metrics {
+        number_input_tokens: 999,
+        number_output_tokens: 999,
+        ..Default::default()
+    };
+
+    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+
+    assert!(
+        result.is_ok(),
+        "chat_completions should succeed with both finish_reason and stop_reason"
+    );
+
+    assert_eq!(
+        metrics.number_output_tokens, 10,
+        "Output tokens should change"
+    );
+    assert!(metrics.finish_reason.is_some(), "Should have finish reason");
+    assert_eq!(
+        metrics.finish_reason.unwrap(),
+        FinishReason::Length,
+        "Finish reason should be Length from finish_reason field"
+    );
+}
+
+#[tokio::test]
+async fn test_chat_completions_stop_reason_only() {
+    let mock_server = MockServer::start().await;
+
+    let stream_response = concat!(
+        r#"data: {"choices":[{"index":0,"delta":{"content":" Hello"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"content":" World"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"stop_reason":"end_turn","index":0,"delta":{}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{}}],"usage":{"completion_tokens":10,"prompt_tokens":10,"total_tokens":20,"completion_tokens_details":{"reasoning_tokens":0}}}"#,
+        "\r\n\r\n",
+        r#"data: [DONE]"#,
+        "\r\n\r\n",
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("content-type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(stream_response, "text/event-stream"))
+        .mount(&mock_server)
+        .await;
+
+    let chat_completion = ChatCompletionRequest::from_messages(
+        "test-model",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("Say hello"),
+        }],
+        10,
+        true,
+        false,
+    );
+
+    let request = Request {
+        url: format!("{}/v1/chat/completions", mock_server.uri()),
+        api_key: Some("test-key".to_string()),
+        chat_completion,
+    };
+
+    let mut metrics = Metrics {
+        number_input_tokens: 999,
+        number_output_tokens: 999,
+        ..Default::default()
+    };
+
+    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+
+    assert!(
+        result.is_ok(),
+        "chat_completions should succeed with stop_reason only"
+    );
+
+    assert_eq!(
+        metrics.number_output_tokens, 10,
+        "Output tokens should change"
+    );
+    assert!(metrics.finish_reason.is_some(), "Should have finish reason");
+    assert_eq!(
+        metrics.finish_reason.unwrap(),
+        FinishReason::Length,
+        "Finish reason should be Length from stop_reason (alias: end_turn)"
+    );
+}
+
+#[tokio::test]
+async fn test_chat_completions_unrecognized_finish_reason() {
+    // Backends may send values like "rejected", "error", "cancel" etc.
+    // These should land in `Other` instead of failing deserialization.
+    let mock_server = MockServer::start().await;
+
+    let stream_response = concat!(
+        r#"data: {"choices":[{"index":0,"delta":{"content":" Hello"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"content":" World"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"stop_reason":"rejected","index":0,"delta":{}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{}}],"usage":{"completion_tokens":10,"prompt_tokens":10,"total_tokens":20,"completion_tokens_details":{"reasoning_tokens":0}}}"#,
+        "\r\n\r\n",
+        r#"data: [DONE]"#,
+        "\r\n\r\n",
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("content-type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(stream_response, "text/event-stream"))
+        .mount(&mock_server)
+        .await;
+
+    let chat_completion = ChatCompletionRequest::from_messages(
+        "test-model",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("Say hello"),
+        }],
+        10,
+        true,
+        false,
+    );
+
+    let request = Request {
+        url: format!("{}/v1/chat/completions", mock_server.uri()),
+        api_key: Some("test-key".to_string()),
+        chat_completion,
+    };
+
+    let mut metrics = Metrics {
+        number_input_tokens: 999,
+        number_output_tokens: 999,
+        ..Default::default()
+    };
+
+    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+
+    assert!(
+        result.is_ok(),
+        "chat_completions should succeed with unrecognized finish reason"
+    );
+    assert!(metrics.finish_reason.is_some(), "Should have finish reason");
+    assert_eq!(
+        metrics.finish_reason.unwrap(),
+        FinishReason::Other,
+        "Unrecognized stop_reason should map to Other"
     );
 }
