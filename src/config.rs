@@ -49,10 +49,10 @@ pub async fn check_api_endpoint(
 
     match check_endpoint(url, model, api_key).await {
         Ok(msg) => {
-            info!("{}", msg);
+            info!("{msg}");
         }
         Err(e) => {
-            log::error!("Failed to connect to API endpoint: {}", e);
+            log::error!("Failed to connect to API endpoint: {e}");
             log::error!("Use --no-check-endpoint to skip this check if needed");
             log::error!("For detailed logging, use: RUST_LOG=INFO");
             return Err(e);
@@ -67,15 +67,16 @@ fn parse_environment_variables() -> Result<(Option<String>, String, Duration)> {
 
     // Read API timeout from environment variable
     let api_timeout = match std::env::var("OPENAI_API_TIMEOUT") {
-        Ok(v) => match v.parse::<u64>() {
-            Ok(timeout) => timeout,
-            Err(_) => {
-                warn!("Error: OPENAI_API_TIMEOUT='{}' is not a valid integer", v);
+        Ok(v) => {
+            if let Ok(timeout) = v.parse::<u64>() {
+                timeout
+            } else {
+                warn!("Error: OPENAI_API_TIMEOUT='{v}' is not a valid integer");
                 warn!("Expected format: OPENAI_API_TIMEOUT=600");
                 warn!("Defaulting to 600 seconds");
                 600
             }
-        },
+        }
         Err(_) => 600,
     };
     let api_timeout = Duration::from_secs(api_timeout);
