@@ -48,10 +48,7 @@ impl ResultsSaver {
         ensure_results_dir_exists(results_dir)?;
 
         let timestamp = chrono::Local::now().format(TIME_FORMAT).to_string();
-        let base_filename = format!(
-            "{}_{}_{}_{}",
-            timestamp, model, mean_input_tokens, mean_output_tokens
-        );
+        let base_filename = format!("{timestamp}_{model}_{mean_input_tokens}_{mean_output_tokens}");
         let sanitized_base = sanitize_filename(&base_filename);
 
         let summary_filename = format!("{sanitized_base}_summary");
@@ -83,7 +80,7 @@ impl ResultsSaver {
         })
     }
 
-    fn setup_writer(&self, filepath: &Path) -> Result<Box<dyn Write + Send>> {
+    fn setup_writer(filepath: &Path) -> Result<Box<dyn Write + Send>> {
         let outfile = File::create(filepath)?;
         let writer: Box<dyn Write + Send> = if filepath
             .extension()
@@ -103,7 +100,7 @@ impl ResultsSaver {
         filepath: &Path,
     ) -> Result<u32> {
         // Open writer once at the start (reuse existing setup_writer)
-        let mut writer = self.setup_writer(filepath)?;
+        let mut writer = ResultsSaver::setup_writer(filepath)?;
         let mut count = 0u32;
 
         // Consume metrics from channel as they arrive
@@ -136,7 +133,7 @@ pub fn load_tokenizer(path: &str) -> Result<Tokenizer, Error> {
         // Convert the error type to `anyhow::Error` if loading fails.
         // Return error for clarity, don't fallback to pretrained.
         return Tokenizer::from_file(path).map_err(|e| {
-            anyhow::anyhow!("Failed to load tokenizer from local file '{}': {}", path, e)
+            anyhow::anyhow!("Failed to load tokenizer from local file '{path}': {e}")
         });
     }
 
@@ -147,7 +144,7 @@ pub fn load_tokenizer(path: &str) -> Result<Tokenizer, Error> {
         ..Default::default()
     };
     Tokenizer::from_pretrained(path, Some(params))
-        .map_err(|e| anyhow::anyhow!("Failed to load tokenizer from '{}': {}", path, e))
+        .map_err(|e| anyhow::anyhow!("Failed to load tokenizer from '{path}': {e}"))
 }
 
 pub fn setup_streaming_saver(

@@ -10,8 +10,7 @@ const MIN_OUTPUT_TOKENS: u32 = 1;
 fn validate_tokens(value: &str, field_name: &str, min: u32) -> Result<u32, String> {
     let tokens: u32 = value.parse().map_err(|_| {
         format!(
-            "Invalid value '{}' for --{field_name}: must be a valid number between {min} and {max}",
-            value,
+            "Invalid value '{value}' for --{field_name}: must be a valid number between {min} and {max}",
             max = u32::MAX
         )
     })?;
@@ -27,29 +26,25 @@ fn validate_tokens(value: &str, field_name: &str, min: u32) -> Result<u32, Strin
     Ok(tokens)
 }
 
-/// validator for mean_input_tokens
+/// validator for `mean_input_tokens`
 fn validate_mean_input_tokens(value: &str) -> Result<u32, String> {
     validate_tokens(value, "mean-input-tokens", MIN_INPUT_TOKENS)
 }
 
-/// validator for mean_output_tokens
+/// validator for `mean_output_tokens`
 fn validate_mean_output_tokens(value: &str) -> Result<u32, String> {
     validate_tokens(value, "mean-output-tokens", MIN_OUTPUT_TOKENS)
 }
 
-/// validator for multi_turn
+/// validator for `multi_turn`
 fn validate_multi_turn(value: &str) -> Result<u32, String> {
     let num_turns: u32 = value.parse().map_err(|_| {
-        format!(
-            "Invalid value '{}' for --multi-turn: must be a positive integer",
-            value
-        )
+        format!("Invalid value '{value}' for --multi-turn: must be a positive integer")
     })?;
 
     if num_turns < 1 {
         return Err(format!(
-            "Invalid value '{}' for --multi-turn: must be at least 1",
-            value
+            "Invalid value '{value}' for --multi-turn: must be at least 1"
         ));
     }
 
@@ -185,7 +180,7 @@ pub struct Cli {
     pub db_url: Option<String>,
 }
 
-/// Converts Vec<String> of "key=value" pairs to HashMap<String, String>
+/// Converts Vec<String> of "key=value" pairs to `HashMap`<String, String>
 fn serialize_metadata<S>(metadata: &[String], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,

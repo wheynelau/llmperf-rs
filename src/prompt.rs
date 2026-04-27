@@ -61,10 +61,9 @@ pub fn randomly_sample_sonnet_lines_prompt(
         static WARN_ONCE: Once = Once::new();
         WARN_ONCE.call_once(|| {
             warn!(
-                "prompt_tokens_mean ({}) is less than base prompt length ({}). \
-                Adjusting mean to ({})\n\
-                This warning will only show once.",
-                prompt_tokens_mean, prompt_token_len, prompt_token_len
+                "prompt_tokens_mean ({prompt_tokens_mean}) is less than base prompt length ({prompt_token_len}). \
+                Adjusting mean to ({prompt_token_len})\n\
+                This warning will only show once."
             );
         });
     }
@@ -122,11 +121,11 @@ fn tokenize_sonnet_lines(
     sonnet_lines: &[String],
 ) -> Result<Vec<tokenizers::Encoding>> {
     // We need to pass references to encode_batch so we don't consume the lines
-    let line_refs: Vec<&str> = sonnet_lines.iter().map(|s| s.as_str()).collect();
+    let line_refs: Vec<&str> = sonnet_lines.iter().map(String::as_str).collect();
 
     let encodings = tokenizer
         .encode_batch_fast(line_refs, false)
-        .map_err(|e| anyhow::anyhow!("Failed to encode batch: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to encode batch: {e}"))?;
 
     Ok(encodings)
 }
@@ -315,7 +314,7 @@ fn create_session_tasks(
 
 /// Container for the task stream and its associated channel endpoints.
 ///
-/// The sender is used by run_session() to send metrics incrementally.
+/// The sender is used by `run_session()` to send metrics incrementally.
 /// The receiver is passed to the file saver for persisting metrics.
 pub struct TaskStream<S> {
     /// The stream of metrics (one Vec per session, containing all turns).

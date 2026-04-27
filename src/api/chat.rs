@@ -4,6 +4,8 @@ use reqwest::Client;
 use std::sync::Once;
 use tokio::time::{Duration, Instant};
 
+static WARN_ONCE: Once = Once::new();
+
 use super::models::{ModelList, Request, StreamResponse};
 use super::sse::{Sse, sse_stream};
 use crate::metrics::{
@@ -77,43 +79,50 @@ fn process_token_delta(
 
 /// Parse one SSE event payload into state and metrics.
 fn handle_response(data: &str, state: &mut StreamState, metrics: &mut Metrics) {
-    if let Ok(response) = serde_json::from_str::<StreamResponse>(data) {
-        if let Some(choice) = response.choices.first() {
-            if let Some(reasoning) = choice
-                .delta
-                .reasoning
-                .as_deref()
-                .or(choice.delta.reasoning_content.as_deref())
-            {
-                state.reasoning_str.push_str(reasoning);
-                process_token_delta(
-                    Some(reasoning),
-                    &mut state.ttft,
-                    &mut state.prev_token,
-                    &mut state.itl,
-                    state.prefill_start,
-                );
-            }
-            if let Some(content) = &choice.delta.content {
-                state.final_str.push_str(content);
-                process_token_delta(
-                    Some(content.as_str()),
-                    &mut state.ttft,
-                    &mut state.prev_token,
-                    &mut state.itl,
-                    state.prefill_start,
-                );
-            }
-            if choice.finish_reason.is_some() {
-                metrics.finish_reason = choice.finish_reason.clone();
-            }
+    let response = match serde_json::from_str::<StreamResponse>(data) {
+        Ok(r) => r,
+        Err(e) => {
+            debug!("Failed to deserialize StreamResponse: {e} (data: {data})");
+            return;
         }
-        if let Some(usage) = response.usage {
-            metrics.number_input_tokens = usage.prompt_tokens;
-            metrics.number_output_tokens = usage.completion_tokens;
-            metrics.number_total_tokens = usage.total_tokens;
-            state.usage_seen = true;
+    };
+    if let Some(choice) = response.choices.first() {
+        if let Some(reasoning) = choice
+            .delta
+            .reasoning
+            .as_deref()
+            .or(choice.delta.reasoning_content.as_deref())
+        {
+            state.reasoning_str.push_str(reasoning);
+            process_token_delta(
+                Some(reasoning),
+                &mut state.ttft,
+                &mut state.prev_token,
+                &mut state.itl,
+                state.prefill_start,
+            );
         }
+        if let Some(content) = &choice.delta.content {
+            state.final_str.push_str(content);
+            process_token_delta(
+                Some(content.as_str()),
+                &mut state.ttft,
+                &mut state.prev_token,
+                &mut state.itl,
+                state.prefill_start,
+            );
+        }
+        let reason = choice.finish_reason.clone().or(choice.stop_reason.clone());
+        if reason.is_some() {
+            debug!("Got finish_reason={reason:?}, data={data}");
+            metrics.finish_reason = reason;
+        }
+    }
+    if let Some(usage) = response.usage {
+        metrics.number_input_tokens = usage.prompt_tokens;
+        metrics.number_output_tokens = usage.completion_tokens;
+        metrics.number_total_tokens = usage.total_tokens;
+        state.usage_seen = true;
     }
 }
 
@@ -125,8 +134,8 @@ async fn handle_error_response(
     metrics.error_code = Some(status.as_u16());
     let body_str = response.text().await.unwrap_or_default();
     let msg = extract_error_message(&body_str);
-    let error_msg = format!("HTTP {} - {}", status, msg);
-    info!("API error: {}", error_msg);
+    let error_msg = format!("HTTP {status} - {msg}");
+    info!("API error: {error_msg}");
     metrics.error_msg = Some(error_msg.clone());
     anyhow::anyhow!(error_msg)
 }
@@ -136,7 +145,14 @@ async fn send_streaming_request(
     api_timeout: &Duration,
 ) -> Result<reqwest::Response, anyhow::Error> {
     let body_json = serde_json::to_string(&request.chat_completion)?;
-    debug!("Sending request to {}: {}", request.url, body_json);
+    debug!(
+        "Sending request to {}: model={} messages={} max_tokens={} stream={}",
+        request.url,
+        request.chat_completion.model,
+        request.chat_completion.messages.len(),
+        request.chat_completion.max_tokens,
+        request.chat_completion.stream,
+    );
 
     // add user-agent just for telemetry purposes
     let client = Client::builder()
@@ -150,7 +166,7 @@ async fn send_streaming_request(
         .body(body_json);
 
     if let Some(key) = &request.api_key {
-        req = req.header("Authorization", format!("Bearer {}", key));
+        req = req.header("Authorization", format!("Bearer {key}"));
     }
 
     Ok(req.send().await?)
@@ -167,8 +183,6 @@ pub async fn chat_completions(
         if !response.status().is_success() {
             return Err(handle_error_response(response, metrics).await);
         }
-
-        static WARN_ONCE: Once = Once::new();
 
         let mut state = StreamState::new(request.chat_completion.max_tokens);
 
@@ -198,7 +212,7 @@ pub async fn chat_completions(
         populate_metrics(
             metrics,
             state.ttft,
-            state.itl,
+            &state.itl,
             state.final_str,
             state.reasoning_str,
         );
@@ -223,16 +237,13 @@ pub async fn check_endpoint(
         None => "None".to_string(),
     };
 
-    info!(
-        "Checking endpoint connectivity: {} (API key: {})",
-        models_endpoint, masked_key
-    );
+    info!("Checking endpoint connectivity: {models_endpoint} (API key: {masked_key})");
 
     let client = Client::builder().user_agent(USER_AGENT).build()?;
     let mut request = client.get(&models_endpoint);
 
     if let Some(key) = api_key {
-        request = request.header("Authorization", format!("Bearer {}", key));
+        request = request.header("Authorization", format!("Bearer {key}"));
     }
 
     let response = request.send().await?;
@@ -260,9 +271,7 @@ pub async fn check_endpoint(
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
             Err(anyhow::anyhow!(
-                "Endpoint check failed with status {}: {}",
-                status,
-                error_text
+                "Endpoint check failed with status {status}: {error_text}"
             ))
         }
     }

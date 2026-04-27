@@ -30,10 +30,9 @@ async fn process_stream(
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> Result<()> {
-    env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Info)
-        .init();
+    env_logger::init();
 
     let app_config = config::load_configuration().await?;
 
@@ -112,11 +111,11 @@ async fn main() -> Result<()> {
         warn!("Note: Some tasks may have been interrupted mid-execution");
     }
 
-    info!("Completed tasks: {}", completed_tasks);
+    info!("Completed tasks: {completed_tasks}");
     if failed_tasks > 0 {
-        warn!("Failed tasks: {}", failed_tasks);
+        warn!("Failed tasks: {failed_tasks}");
     }
-    info!("Total elapsed time: {:?}", elapsed);
+    info!("Total elapsed time: {elapsed:?}");
     info!("Collected metrics from {} tasks", collected_metrics.len());
 
     // Check if any tasks were completed
@@ -144,13 +143,13 @@ async fn main() -> Result<()> {
     if let Some(handle) = saver_handle {
         match handle.await {
             Ok(Ok(count)) => {
-                info!("Saved {} individual responses to disk", count);
+                info!("Saved {count} individual responses to disk");
             }
             Ok(Err(e)) => {
-                warn!("Failed to save individual responses: {}", e);
+                warn!("Failed to save individual responses: {e}");
             }
             Err(e) => {
-                warn!("Saver task panicked: {}", e);
+                warn!("Saver task panicked: {e}");
             }
         }
     }
@@ -159,14 +158,14 @@ async fn main() -> Result<()> {
     if let Some(ref results_saver) = app_config.results_saver
         && let Err(e) = results_saver.save_summary(&summary)
     {
-        warn!("Failed to save summary: {}", e);
+        warn!("Failed to save summary: {e}");
     }
 
     // Insert summary into database if db_pool is available
     if let Some(ref pool) = app_config.db_pool {
         match token_benchmark::db::insert_summary(pool, &summary).await {
             Ok(()) => info!("Summary inserted into database."),
-            Err(e) => warn!("Failed to insert summary into database: {}", e),
+            Err(e) => warn!("Failed to insert summary into database: {e}"),
         }
     }
 

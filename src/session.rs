@@ -76,7 +76,7 @@ impl MultiTurnSession {
         }
     }
 
-    /// Build a ChatCompletionRequest for the current turn.
+    /// Build a `ChatCompletionRequest` for the current turn.
     ///
     /// Uses the accumulated message history as the conversation context.
     pub fn build_request(&self) -> ChatCompletionRequest {

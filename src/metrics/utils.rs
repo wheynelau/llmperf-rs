@@ -52,7 +52,7 @@ pub fn calculate_decode_tps(itl: &[Duration]) -> f64 {
 pub fn populate_metrics(
     metrics: &mut Metrics,
     ttft: Option<Duration>,
-    itl: Vec<Duration>,
+    itl: &[Duration],
     content: String,
     reasoning: String,
 ) {

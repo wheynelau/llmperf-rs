@@ -2,7 +2,7 @@ use async_stream::stream;
 use futures::{Stream, StreamExt};
 use reqwest::Response;
 
-/// A parsed SSE event, mirroring the shape of eventsource_client::SSE
+/// A parsed SSE event, mirroring the shape of `eventsource_client::SSE`
 pub enum Sse {
     /// A data event with the raw payload string (the `data:` line value)
     Event(String),
@@ -28,7 +28,7 @@ pub fn sse_stream(response: Response) -> impl Stream<Item = anyhow::Result<Sse>>
         while let Some(chunk) = byte_stream.next().await {
             let bytes = chunk?;
 
-            for &b in bytes.iter() {
+            for &b in &bytes {
                 match b {
                     b'\r' => {
                         // Treat \r as a line terminator; set flag to skip a following \n
