@@ -95,5 +95,5 @@ input_tokens = (2000 + 100) × (N-1) + 2000
 output_tokens = 100
 ```
 
-Also note that reasoning contents are not included, following some of the guidelines from openai and anthropic. It is common to discard reasoning in the message history.
+Note that reasoning contents **are** included in the message history we send back. We echo the previous turn's `reasoning_content` on the assistant message, so servers that support prefix caching over reasoning can reuse the KV cache on subsequent turns (e.g. Z.ai's "Preserved thinking" with `clear_thinking: false`). Providers that don't understand `reasoning_content` simply ignore it. This diverges from the common "discard reasoning" guidance because caching reuse is worth more to us than token savings on the echoed content.
 Reference: [openai](https://developers.openai.com/api/docs/guides/reasoning#how-reasoning-works) and [anthropic](https://platform.claude.com/docs/en/build-with-claude/extended-thinking#the-context-window-with-extended-thinking)

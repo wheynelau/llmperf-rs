@@ -38,12 +38,20 @@ async fn main() -> Result<()> {
 
     // Check API endpoint
     config::check_api_endpoint(
+        &app_config.client,
         &app_config.api_base,
         &app_config.cli_config.model,
         app_config.api_key.as_deref(),
         app_config.cli_config.no_check_endpoint,
     )
     .await?;
+
+    // Start the progress bar spin now that preflight INFO logs have settled.
+    // Ticking during the endpoint check would race those logs and produce
+    // scrambled stderr output.
+    app_config
+        .progress_bar
+        .enable_steady_tick(Duration::from_millis(40));
 
     let task_stream = prompt::create_task_stream(&app_config)?;
     let mut stream = task_stream.stream;
@@ -128,9 +136,9 @@ async fn main() -> Result<()> {
     summary_builder
         .num_completed_requests(completed_tasks)
         .num_requests_started(completed_tasks + failed_tasks)
+        .args(cli_config)
         .add_metrics(&collected_metrics)
-        .time(elapsed.as_secs_f64())
-        .args(cli_config);
+        .time(elapsed.as_secs_f64());
 
     let summary = summary_builder.build();
 

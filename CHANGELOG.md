@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-rc1] - 2026-07-31
+
+### Added
+
+- `cache_hit_rate` summary metric for multi-turn runs, plus per-response `cached_tokens`, `turn_index`, and `cumulative_prior_tokens` fields. The rate is `Σ cached_tokens / Σ total_tokens of non-final turns`: it measures how much of the previously-sent conversation history was actually served from cache, not how much of the current input was cached. See [docs/metrics.md](docs/metrics.md).
+- `--headers KEY=VALUE` flag (repeatable on the CLI, comma-separated via the `HEADERS` env var) to send extra HTTP headers on every chat-completions request. `Content-Type` and `Authorization` cannot be overridden.
+- Pre-commit hooks (`cargo check`, `cargo clippy`, `cargo fmt`) via `.pre-commit-config.yaml`.
+
+### Changed
+
+- A single shared `reqwest::Client` is now built once and cloned into every task, so concurrent requests reuse the same keep-alive connection pool instead of each creating its own client. Per-request timeouts are set on the request itself rather than on the client.
+- `decode_throughput_tps` is now `output_tokens / end_to_end_latency` instead of being derived from inter-token latencies, which was inaccurate for endpoints that emit chunked text.
+- Multi-turn requests now echo the previous turn's `reasoning_content` on the assistant message so providers that support prefix caching over reasoning can reuse the KV cache across turns.
+- The progress bar's steady tick starts only after the preflight endpoint check, avoiding races between the ticker and preflight INFO logs on stderr.
+
+### Fixed
+
+- Clippy pedantic lint warnings across the codebase.
+
 ## [0.6.3] - 2026-04-27
 
 ### Added
@@ -50,7 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Incremental metrics via an `mpsc` sender, allowing results to be streamed out of `run_session` as they arrive.
 
-[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.7.0-rc1...HEAD
+[0.7.0-rc1]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.3...v0.7.0-rc1
 [0.6.3]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.0...v0.6.1

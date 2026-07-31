@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, Hash)]
@@ -19,12 +20,19 @@ pub struct StreamResponse {
     pub usage: Option<Usage>,
 }
 
+#[derive(Deserialize, Debug, Default, Clone)]
+pub struct PromptTokensDetails {
+    pub cached_tokens: Option<u32>,
+    pub cached_read_tokens: Option<u32>,
+}
+
 #[derive(Deserialize, Debug)]
 pub struct Usage {
     pub completion_tokens: u32,
     pub prompt_tokens: u32,
     pub total_tokens: u32,
     pub reasoning_tokens: Option<u32>,
+    pub prompt_tokens_details: Option<PromptTokensDetails>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -50,6 +58,7 @@ pub struct Request {
     pub url: String,
     pub api_key: Option<String>,
     pub chat_completion: ChatCompletionRequest,
+    pub headers: HashMap<String, String>,
 }
 
 #[derive(Default, Serialize)]
@@ -82,6 +91,7 @@ impl Request {
             url: format!("{base_url}/chat/completions"),
             api_key,
             chat_completion,
+            headers: HashMap::new(),
         }
     }
 }
@@ -131,6 +141,8 @@ impl ChatCompletionRequest {
 pub struct Message {
     pub role: String,
     pub content: Arc<str>,
+    #[serde(rename = "reasoning_content", skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<Arc<str>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -148,4 +160,80 @@ pub struct ModelList {
 #[derive(Debug, Deserialize)]
 pub struct ModelInfo {
     pub id: String,
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::*;
+
+    #[test]
+    fn usage_parses_prompt_tokens_details() {
+        let json = r#"{
+            "completion_tokens": 100,
+            "prompt_tokens": 53,
+            "total_tokens": 153,
+            "prompt_tokens_details": {"cached_tokens": 32}
+        }"#;
+        let usage: Usage = serde_json::from_str(json).unwrap();
+        let details = usage.prompt_tokens_details.as_ref().unwrap();
+        assert_eq!(details.cached_tokens, Some(32));
+        assert_eq!(details.cached_read_tokens, None);
+    }
+
+    #[test]
+    fn usage_without_prompt_tokens_details_deserializes() {
+        let json = r#"{
+            "completion_tokens": 100,
+            "prompt_tokens": 53,
+            "total_tokens": 153
+        }"#;
+        let usage: Usage = serde_json::from_str(json).unwrap();
+        assert!(usage.prompt_tokens_details.is_none());
+    }
+
+    #[test]
+    fn prompt_tokens_details_partial_fields_default_to_zero() {
+        let json = r#"{
+            "completion_tokens": 100,
+            "prompt_tokens": 53,
+            "total_tokens": 153,
+            "prompt_tokens_details": {"cached_tokens": 32}
+        }"#;
+        let usage: Usage = serde_json::from_str(json).unwrap();
+        let details = usage.prompt_tokens_details.as_ref().unwrap();
+        assert_eq!(details.cached_tokens, Some(32));
+        assert_eq!(details.cached_read_tokens, None);
+    }
+
+    #[test]
+    fn prompt_tokens_details_only_cached_read_tokens() {
+        let json = r#"{
+            "completion_tokens": 100,
+            "prompt_tokens": 53,
+            "total_tokens": 153,
+            "prompt_tokens_details": {"cached_read_tokens": 64}
+        }"#;
+        let usage: Usage = serde_json::from_str(json).unwrap();
+        let details = usage.prompt_tokens_details.as_ref().unwrap();
+        assert_eq!(details.cached_tokens, None);
+        assert_eq!(details.cached_read_tokens, Some(64));
+    }
+
+    #[test]
+    fn prompt_tokens_details_accepts_dual_keys_without_duplicate_field_error() {
+        let json = r#"{
+            "completion_tokens": 100,
+            "prompt_tokens": 53,
+            "total_tokens": 153,
+            "prompt_tokens_details": {"cached_tokens": 384, "cached_read_tokens": 512}
+        }"#;
+        let usage: Usage = serde_json::from_str(json)
+            .expect("dual keys must not trigger serde_json duplicate-field error");
+        let details = usage
+            .prompt_tokens_details
+            .as_ref()
+            .expect("details present");
+        assert_eq!(details.cached_tokens, Some(384));
+        assert_eq!(details.cached_read_tokens, Some(512));
+    }
 }

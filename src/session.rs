@@ -32,6 +32,7 @@ impl MultiTurnSession {
         let messages = vec![Message {
             role: "user".to_string(),
             content: Arc::from(initial_prompt),
+            reasoning: None,
         }];
 
         MultiTurnSession {
@@ -57,11 +58,17 @@ impl MultiTurnSession {
     ///
     /// Appends the assistant's response to the message history. If there are more
     /// turns to complete, appends the String.
-    pub fn store_response_and_advance(&mut self, content: Arc<str>, config: &PromptConfig) {
+    pub fn store_response_and_advance(
+        &mut self,
+        content: Arc<str>,
+        reasoning: Option<Arc<str>>,
+        config: &PromptConfig,
+    ) {
         // Append assistant response
         self.messages.push(Message {
             role: "assistant".to_string(),
             content,
+            reasoning,
         });
 
         // Advance turn index
@@ -72,6 +79,7 @@ impl MultiTurnSession {
             self.messages.push(Message {
                 role: "user".to_string(),
                 content: Arc::from(prompt),
+                reasoning: None,
             });
         }
     }

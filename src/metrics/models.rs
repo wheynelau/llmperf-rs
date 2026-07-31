@@ -44,6 +44,7 @@ pub struct SummaryMetrics {
     pub input_tokens: DetailedStats<u32>,
     #[serde(flatten, with = "output_tokens")]
     pub output_tokens: DetailedStats<u32>,
+    pub cache_hit_rate: Option<f64>,
     pub error_code_frequency: std::collections::HashMap<u16, u32>,
     pub finish_reasons: std::collections::HashMap<FinishReason, u32>,
     pub number_errors: u32,
@@ -54,7 +55,7 @@ pub struct SummaryMetrics {
     pub timestamp: u64,
     pub args: Cli,
 }
-#[derive(Default, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Metrics {
     pub itl_ms_mean: f64,
     pub itl_ms_stddev: f64,
@@ -71,8 +72,17 @@ pub struct Metrics {
     pub content: Option<Arc<str>>,
     pub reasoning: Option<Arc<str>>,
     pub finish_reason: Option<FinishReason>,
+    /// `None` when the endpoint does not report `prompt_tokens_details`.
+    /// `Some(0)` means the endpoint explicitly reported 0 cached tokens.
+    pub cached_tokens: Option<u32>,
     /// Turn index (0-based). Always 0 for single-turn mode.
     pub turn_index: usize,
+    /// Sum of `number_input_tokens + number_output_tokens` across all
+    /// *prior* turns of this session at the point this metric's request was
+    /// built. Used as the cache-hit-rate denominator (Definition B):
+    /// "fraction of cacheable prior history the API actually returned from
+    /// cache." Always 0 on turn 0 (cold start; no prior history exists).
+    pub cumulative_prior_tokens: u32,
 }
 // Due to complexity, might be better to have a builder
 #[derive(Default)]
@@ -84,6 +94,9 @@ pub struct SummaryBuilder {
     decode_throughput_tps_vec: Vec<f64>,
     input_tokens_vec: Vec<u32>,
     output_tokens_vec: Vec<u32>,
+    cached_tokens_sum: u64,
+    cached_total_tokens_sum: u64,
+    any_warm_unobserved: bool,
     error_code_frequency: std::collections::HashMap<u16, u32>,
     finish_reasons: std::collections::HashMap<FinishReason, u32>,
     number_errors: u32,
@@ -99,18 +112,18 @@ impl SummaryBuilder {
     }
 
     fn add_ttft(&mut self, ttft: f64) {
-        self.ttft_vec.push(ttft)
+        self.ttft_vec.push(ttft);
     }
 
     fn add_e2e_latency(&mut self, e2e_latency: f64) {
-        self.end_to_end_latency_vec.push(e2e_latency)
+        self.end_to_end_latency_vec.push(e2e_latency);
     }
 
     fn add_prefill_throughput_tps(&mut self, prefill_throughput_tps: f64) {
         if prefill_throughput_tps == 0.0 {
             return;
         }
-        self.prefill_throughput_tps_vec.push(prefill_throughput_tps)
+        self.prefill_throughput_tps_vec.push(prefill_throughput_tps);
     }
 
     fn add_decode_throughput_tps(&mut self, decode_throughput_tps: f64) {
@@ -118,14 +131,38 @@ impl SummaryBuilder {
         if decode_throughput_tps == 0.0 {
             return;
         }
-        self.decode_throughput_tps_vec.push(decode_throughput_tps)
+        self.decode_throughput_tps_vec.push(decode_throughput_tps);
     }
 
     fn add_input_tokens(&mut self, input_tokens: u32) {
-        self.input_tokens_vec.push(input_tokens)
+        self.input_tokens_vec.push(input_tokens);
     }
     fn add_output_tokens(&mut self, output_tokens: u32) {
-        self.output_tokens_vec.push(output_tokens)
+        self.output_tokens_vec.push(output_tokens);
+    }
+    fn add_total_tokens(&mut self, total_tokens: u32, turn_index: usize) {
+        // Cache-hit-rate denominator: sum the total tokens of every turn that
+        // gets re-sent in a later request, i.e. every turn except the last turn
+        // of each session (the last turn's content is never re-sent, so it can
+        // never be served from cache). `multi_turn` must be set on the builder
+        // (via `args`) before metrics are added.
+        if self.args.multi_turn > 1 && turn_index as u32 != self.args.multi_turn - 1 {
+            self.cached_total_tokens_sum += total_tokens as u64;
+        }
+    }
+
+    /// Accumulate one observation into the cache-hit numerator.
+    ///
+    /// Sums every reported `cached_tokens` value. A turn that reports `None`
+    /// (endpoint did not report cache stats) poisons the whole run: the
+    /// `cache_hit_rate` becomes `None` because an unobserved warm turn makes
+    /// the ratio meaningless. Cold-start turns report `cached_tokens = 0`, so
+    /// they contribute nothing and need no special handling.
+    fn add_cached_tokens(&mut self, cached_tokens: Option<u32>) {
+        match cached_tokens {
+            Some(cached) => self.cached_tokens_sum += cached as u64,
+            None => self.any_warm_unobserved = true,
+        }
     }
 
     fn add_error_code(&mut self, error_code: u16) {
@@ -153,6 +190,8 @@ impl SummaryBuilder {
             self.add_decode_throughput_tps(metric.decode_throughput_tps);
             self.add_input_tokens(metric.number_input_tokens);
             self.add_output_tokens(metric.number_output_tokens);
+            self.add_total_tokens(metric.number_total_tokens, metric.turn_index);
+            self.add_cached_tokens(metric.cached_tokens);
             self.add_finish_reason(metric.finish_reason.clone());
         }
 
@@ -197,6 +236,12 @@ impl SummaryBuilder {
             0.0
         };
 
+        let cache_hit_rate = if self.any_warm_unobserved || self.cached_total_tokens_sum == 0 {
+            None
+        } else {
+            Some(self.cached_tokens_sum as f64 / self.cached_total_tokens_sum as f64)
+        };
+
         SummaryMetrics {
             itl_ms: calculate_percentiles_f64(&self.itl_vec),
             ttft_s: calculate_percentiles_f64(&self.ttft_vec),
@@ -205,6 +250,7 @@ impl SummaryBuilder {
             decode_throughput_tps: calculate_percentiles_f64(&self.decode_throughput_tps_vec),
             input_tokens: calculate_percentiles_ord(&self.input_tokens_vec),
             output_tokens: calculate_percentiles_ord(&self.output_tokens_vec),
+            cache_hit_rate,
             error_code_frequency: std::mem::take(&mut self.error_code_frequency),
             finish_reasons: std::mem::take(&mut self.finish_reasons),
             number_errors: self.number_errors,

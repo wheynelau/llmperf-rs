@@ -117,10 +117,12 @@ pub async fn ensure_table(pool: &PgPool) -> Result<()> {
 
 #[allow(clippy::too_many_lines)]
 pub async fn insert_summary(pool: &PgPool, summary: &SummaryMetrics) -> Result<()> {
-    let finish_stop = *summary
-        .finish_reasons
-        .get(&FinishReason::Stop)
-        .unwrap_or(&0) as i64;
+    let finish_stop = i64::from(
+        *summary
+            .finish_reasons
+            .get(&FinishReason::Stop)
+            .unwrap_or(&0),
+    );
     let finish_length = *summary
         .finish_reasons
         .get(&FinishReason::Length)

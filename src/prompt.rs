@@ -6,6 +6,7 @@ use log::warn;
 use rand::Rng;
 use rand::seq::SliceRandom;
 use statrs::distribution::{ContinuousCDF, Normal};
+use std::collections::HashMap;
 use std::sync::{Arc, Once};
 use tokio::sync::mpsc;
 use tokio::time::Duration;
@@ -17,8 +18,10 @@ use crate::metrics::{self, Metrics};
 use crate::session::MultiTurnSession;
 
 pub const SONNET_TEXT: &str = include_str!("../sonnet.txt");
-pub const PROMPT_TEXT: &str =
-    "Repeat lines indefinitely from the above text. Don't generate eos tokens:\n";
+// accept that the extra \n will introduce inaccurate input tokens
+// Against reasoning models, they tend to refuse this, so setting it to a reasonable number
+// Gets lesser refusals or rejections
+pub const PROMPT_TEXT: &str = "\nAs part of a benchmarking test, repeat the above lines 1 times:\n";
 
 /// Sample from a truncated normal distribution using the PPF (Percent Point Function) method.
 /// This is slower than rejection sampling, but can be a little more stable
@@ -144,13 +147,19 @@ pub fn parse_sonnet_text(
     Ok(Arc::from(lines_with_encodings))
 }
 
-fn build_metrics(prompt_tokens: u32, output_tokens: u32, turn_index: usize) -> Metrics {
+fn build_metrics(
+    prompt_tokens: u32,
+    output_tokens: u32,
+    turn_index: usize,
+    cumulative_prior_tokens: u32,
+) -> Metrics {
     let mut metrics = metrics::Metrics::default();
     // Populate the variables we already know
     metrics.number_input_tokens = prompt_tokens;
     metrics.number_output_tokens = output_tokens;
     metrics.number_total_tokens = metrics.number_input_tokens + metrics.number_output_tokens;
     metrics.turn_index = turn_index;
+    metrics.cumulative_prior_tokens = cumulative_prior_tokens;
 
     metrics
 }
@@ -182,6 +191,29 @@ struct SessionInput {
     output_tokens: u32,
     input_tokens: u32,
     config: PromptConfig,
+    extra_headers: HashMap<String, String>,
+}
+
+/// Transport config shared by every session in a run.
+#[derive(Clone)]
+struct SessionContext {
+    client: reqwest::Client,
+    api_timeout: Duration,
+    api_base: String,
+    api_key: Option<String>,
+    progress_bar: ProgressBar,
+}
+
+impl SessionContext {
+    fn from_config(config: &AppConfig) -> Self {
+        SessionContext {
+            client: config.client.clone(),
+            api_timeout: config.api_timeout,
+            api_base: config.api_base.clone(),
+            api_key: config.api_key.clone(),
+            progress_bar: config.progress_bar.clone(),
+        }
+    }
 }
 
 fn create_session_inputs(
@@ -208,6 +240,8 @@ fn create_session_inputs(
         tokenizer,
     };
 
+    let extra_headers = app_config.cli_config.extra_headers();
+
     (0..app_config.cli_config.max_num_completed_requests).map(move |_| {
         // Generate initial prompt for this session
         let (initial_prompt, input_tokens) = config.generate_turn_prompt();
@@ -230,6 +264,7 @@ fn create_session_inputs(
             output_tokens,
             input_tokens,
             config: config.clone(),
+            extra_headers: extra_headers.clone(),
         }
     })
 }
@@ -237,10 +272,7 @@ fn create_session_inputs(
 /// Run a complete session: loop through all turns, collecting metrics.
 async fn run_session(
     input: SessionInput,
-    api_timeout: Duration,
-    api_base: String,
-    api_key: Option<String>,
-    pb: &ProgressBar,
+    ctx: SessionContext,
     sender: Option<mpsc::UnboundedSender<Metrics>>,
 ) -> Vec<Metrics> {
     let mut session = input.session;
@@ -248,17 +280,24 @@ async fn run_session(
     let input_tokens = input.input_tokens;
     let config = input.config;
     let mut metrics_list = Vec::new();
+    // Running total of tokens consumed in all *prior* completed turns
+    // (input + output). Used as the cache-hit-rate denominator for the
+    // entire session: at turn N it sums turns 0..N-1.
+    let mut prior_turn_total: u32 = 0;
 
     while !session.is_complete() {
         let turn_index = session.turn_index;
         let chat_req = session.build_request();
-        let request = Request::new(api_base.clone(), api_key.clone(), chat_req);
+        let mut request = Request::new(ctx.api_base.clone(), ctx.api_key.clone(), chat_req);
+        request.headers = input.extra_headers.clone();
 
         // Build metrics template for this turn
-        let mut metrics = build_metrics(input_tokens, output_tokens, turn_index);
+        let mut metrics = build_metrics(input_tokens, output_tokens, turn_index, prior_turn_total);
 
         // Send request and collect response
-        if let Err(e) = api::chat_completions(request, &mut metrics, &api_timeout).await {
+        if let Err(e) =
+            api::chat_completions(&ctx.client, request, &mut metrics, &ctx.api_timeout).await
+        {
             metrics.error_msg = Some(e.to_string());
             metrics_list.push(metrics.clone());
             // Send metrics immediately on error
@@ -271,19 +310,27 @@ async fn run_session(
         // Update metrics with actual token counts
         metrics.number_total_tokens = metrics.number_input_tokens + metrics.number_output_tokens;
 
-        // Extract response content for the next turn, even if reasoning is present, don't clone it
-        // Clone here cause we need the content for the metrics writing
+        // Extract response content and reasoning for the next turn so the server can
+        // reuse its KV cache across turns (reasoning echoed as reasoning_content).
         let response_content = metrics.content.clone().unwrap_or_default();
+        let response_reasoning = metrics
+            .reasoning
+            .as_ref()
+            .filter(|r| !r.is_empty())
+            .cloned();
 
         // Send metrics immediately on successful turn
         if let Some(ref tx) = sender {
             tx.send(metrics.clone()).ok();
         }
 
+        // assuming that u32::MAX is enough
+        prior_turn_total += metrics.number_input_tokens + metrics.number_output_tokens;
+
         metrics_list.push(metrics);
 
-        session.store_response_and_advance(response_content, &config);
-        pb.inc(1);
+        session.store_response_and_advance(response_content, response_reasoning, &config);
+        ctx.progress_bar.inc(1);
     }
 
     metrics_list
@@ -292,22 +339,16 @@ async fn run_session(
 /// Build the session stream for multi-turn benchmarking.
 fn create_session_tasks(
     inputs: impl Iterator<Item = SessionInput>,
-    api_timeout: Duration,
+    ctx: SessionContext,
     num_concurrent_requests: usize,
-    api_base: String,
-    api_key: Option<String>,
-    progress_bar: &ProgressBar,
     sender: Option<mpsc::UnboundedSender<Metrics>>,
 ) -> impl Stream<Item = Vec<Metrics>> {
     stream::iter(inputs)
         .map(move |input| {
-            let api_base = api_base.clone();
-            let api_key = api_key.clone();
+            let ctx = ctx.clone();
             let sender = sender.clone();
 
-            async move {
-                run_session(input, api_timeout, api_base, api_key, progress_bar, sender).await
-            }
+            async move { run_session(input, ctx, sender).await }
         })
         .buffer_unordered(num_concurrent_requests)
 }
@@ -336,11 +377,8 @@ pub fn create_task_stream(
 
     let stream = create_session_tasks(
         inputs,
-        config.api_timeout,
+        SessionContext::from_config(config),
         config.cli_config.num_concurrent_requests,
-        config.api_base.clone(),
-        config.api_key.clone(),
-        &config.progress_bar,
         Some(sender.clone()),
     );
 
@@ -349,4 +387,50 @@ pub fn create_task_stream(
         sender,
         receiver,
     })
+}
+
+#[cfg(test)]
+mod reasoning_round_trip_tests {
+    use super::*;
+    use crate::session::MultiTurnSession;
+    use std::sync::Arc;
+    use tokenizers::Tokenizer;
+
+    fn test_config() -> PromptConfig {
+        let tokenizer =
+            Tokenizer::from_pretrained("hf-internal-testing/llama-tokenizer", None).unwrap();
+        PromptConfig {
+            prompt_encoding: tokenizer.encode_fast(PROMPT_TEXT, false).unwrap(),
+            sonnet_lines: Arc::from(Vec::<tokenizers::Encoding>::new()),
+            mean_input_tokens: 0,
+            stddev_input_tokens: 0,
+            tokenizer,
+        }
+    }
+
+    #[test]
+    fn store_response_round_trips_reasoning_into_assistant_message() {
+        let config = test_config();
+        let mut session = MultiTurnSession::new(1, "hello".to_string(), "m".to_string(), 10, true);
+        session.store_response_and_advance(
+            Arc::from("answer"),
+            Some(Arc::from("the reasoning")),
+            &config,
+        );
+
+        let assistant = session.messages.last().expect("assistant message present");
+        assert_eq!(assistant.role, "assistant");
+        assert_eq!(assistant.reasoning.as_deref(), Some("the reasoning"));
+        assert_eq!(assistant.content.as_ref(), "answer");
+    }
+
+    #[test]
+    fn store_response_preserves_none_reasoning() {
+        let config = test_config();
+        let mut session = MultiTurnSession::new(1, "hello".to_string(), "m".to_string(), 10, true);
+        session.store_response_and_advance(Arc::from("answer"), None, &config);
+
+        let assistant = session.messages.last().expect("assistant message present");
+        assert!(assistant.reasoning.is_none());
+    }
 }

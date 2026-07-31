@@ -41,13 +41,8 @@ pub fn calculate_prefill_tps(ttft: Option<&Duration>, input_tokens: u32) -> f64 
     }
 }
 
-pub fn calculate_decode_tps(itl: &[Duration]) -> f64 {
-    // Calculate decode tps with itl
-    if itl.is_empty() {
-        return 0.0;
-    }
-    let total_time = itl.iter().sum::<Duration>().as_secs_f64();
-    itl.len() as f64 / total_time
+pub fn calculate_decode_tps(metrics: &Metrics, e2e_time: &Duration) -> f64 {
+    metrics.number_output_tokens as f64 / e2e_time.as_secs_f64()
 }
 pub fn populate_metrics(
     metrics: &mut Metrics,

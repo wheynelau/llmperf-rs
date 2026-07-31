@@ -5,6 +5,7 @@ use anyhow::Result;
 use clap::Parser;
 use indicatif::ProgressBar;
 use log::{info, warn};
+use reqwest::Client;
 use tokio::time::Duration;
 
 #[derive(Clone)]
@@ -14,6 +15,7 @@ pub struct AppConfig {
     pub api_key: Option<String>,
     pub api_base: String,
     pub api_timeout: Duration,
+    pub client: Client,
     pub results_saver: Option<ResultsSaver>,
     pub db_pool: Option<sqlx::PgPool>,
     pub progress_bar: ProgressBar,
@@ -37,6 +39,7 @@ fn load_and_validate_tokenizer(config: &crate::args::Cli) -> Result<tokenizers::
 }
 
 pub async fn check_api_endpoint(
+    client: &Client,
     url: &str,
     model: &str,
     api_key: Option<&str>,
@@ -47,7 +50,7 @@ pub async fn check_api_endpoint(
         return Ok(());
     }
 
-    match check_endpoint(url, model, api_key).await {
+    match check_endpoint(client, url, model, api_key).await {
         Ok(msg) => {
             info!("{msg}");
         }
@@ -90,15 +93,17 @@ fn parse_environment_variables() -> Result<(Option<String>, String, Duration)> {
 }
 
 fn build_progress_bar(cli_config: &Cli) -> Result<ProgressBar, anyhow::Error> {
-    // Set up progress bar — total is requests * turns since each turn increments by 1
+    // Set up progress bar — total is requests * turns since each turn increments by 1.
+    // Steady ticking is intentionally not enabled here so the bar does not
+    // race with preflight INFO logs (endpoint check, etc). The caller is
+    // responsible for calling `enable_steady_tick` once preflight completes.
     let total_turns = cli_config.max_num_completed_requests * cli_config.multi_turn;
-    let pb = ProgressBar::new(total_turns as u64);
+    let pb = ProgressBar::new(u64::from(total_turns));
     pb.set_style(
         indicatif::ProgressStyle::default_bar()
             .template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})")?
             .progress_chars("#>-"),
     );
-    pb.enable_steady_tick(Duration::from_millis(40));
     Ok(pb)
 }
 
@@ -109,6 +114,9 @@ pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
 
     // Parse environment variables
     let (api_key, api_base, api_timeout) = parse_environment_variables()?;
+
+    // Shared HTTP client (owns the connection pool, cloned per task)
+    let client = crate::api::chat::build_shared_client()?;
 
     // Load and validate tokenizer
     let tokenizer = load_and_validate_tokenizer(&cli_config)?;
@@ -140,9 +148,9 @@ pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
     // we could just log everything here first
     info!(
         "Starting {total_task} tasks with concurrency of {concurrency} with num_turns {num_turns}",
-        total_task = &cli_config.max_num_completed_requests,
-        concurrency = &cli_config.num_concurrent_requests,
-        num_turns = &cli_config.multi_turn
+        total_task = cli_config.max_num_completed_requests,
+        concurrency = cli_config.num_concurrent_requests,
+        num_turns = cli_config.multi_turn
     );
 
     // Set up the timeout duration (0 means no timeout)
@@ -163,6 +171,7 @@ pub async fn load_configuration() -> Result<AppConfig, anyhow::Error> {
         api_key,
         api_base,
         api_timeout,
+        client,
         results_saver,
         db_pool,
         progress_bar,

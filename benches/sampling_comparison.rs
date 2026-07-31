@@ -5,7 +5,7 @@ use rand_distr::{Distribution, Normal};
 use statrs::distribution::{ContinuousCDF, Normal as StatrsNormal};
 use std::hint::black_box;
 
-/// Current rejection sampling method - loops until sample >= min_value
+/// Current rejection sampling method - loops until sample >= `min_value`
 fn sample_rejection(mean: u32, stddev: u32, min_value: u32) -> u32 {
     if stddev == 0 {
         return mean;
@@ -15,11 +15,11 @@ fn sample_rejection(mean: u32, stddev: u32, min_value: u32) -> u32 {
     let normal = Normal::new(mean as f64, stddev as f64).unwrap();
 
     loop {
-        let sample_f64 = normal.sample(&mut rng);
-        let sample_u32 = sample_f64.round() as u32;
+        let sample_f = normal.sample(&mut rng);
+        let sample_u = sample_f.round() as u32;
 
-        if sample_u32 >= min_value {
-            return sample_u32;
+        if sample_u >= min_value {
+            return sample_u;
         }
     }
 }
@@ -43,11 +43,11 @@ fn sample_inverse_cdf(mean: u32, stddev: u32, min_value: u32) -> u32 {
 
     let z = (2.0_f64 * u2.ln()).sqrt() * ((2.0_f64 * std::f64::consts::PI * u1).cos());
 
-    let sample_f64 = mean as f64 + stddev as f64 * z;
-    let sample_u32 = sample_f64.round() as i64;
+    let sample_f = mean as f64 + stddev as f64 * z;
+    let sample_i = sample_f.round() as i64;
 
     // Clamp to minimum value instead of looping
-    sample_u32.max(min_value as i64) as u32
+    sample_i.max(min_value as i64) as u32
 }
 
 /// PPF (Percent Point Function / Inverse CDF) method using statrs

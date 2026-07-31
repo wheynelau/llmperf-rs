@@ -20,6 +20,16 @@ const TRUNCATED_LIMIT: usize = 200;
 /// User-agent sent with every outbound request. Telemetry only.
 const USER_AGENT: &str = concat!("llmperf-rs/", env!("CARGO_PKG_VERSION"));
 
+/// Build the shared HTTP client used for all requests.
+///
+/// `reqwest::Client` owns the connection pool; constructing one and cloning it
+/// into each task (it's a cheap `Arc` clone) lets concurrent requests reuse
+/// keep-alive connections instead of each spinning up its own pool.
+/// Per-request timeouts are set on the individual `RequestBuilder`.
+pub fn build_shared_client() -> anyhow::Result<reqwest::Client> {
+    Ok(Client::builder().user_agent(USER_AGENT).build()?)
+}
+
 /// Extract error message from response body, handling OpenAI-style error format
 fn extract_error_message(body_str: &str) -> String {
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body_str)
@@ -122,6 +132,10 @@ fn handle_response(data: &str, state: &mut StreamState, metrics: &mut Metrics) {
         metrics.number_input_tokens = usage.prompt_tokens;
         metrics.number_output_tokens = usage.completion_tokens;
         metrics.number_total_tokens = usage.total_tokens;
+        metrics.cached_tokens = usage
+            .prompt_tokens_details
+            .as_ref()
+            .and_then(|d| d.cached_tokens.or(d.cached_read_tokens));
         state.usage_seen = true;
     }
 }
@@ -141,6 +155,7 @@ async fn handle_error_response(
 }
 
 async fn send_streaming_request(
+    client: &reqwest::Client,
     request: &Request,
     api_timeout: &Duration,
 ) -> Result<reqwest::Response, anyhow::Error> {
@@ -154,16 +169,15 @@ async fn send_streaming_request(
         request.chat_completion.stream,
     );
 
-    // add user-agent just for telemetry purposes
-    let client = Client::builder()
-        .timeout(*api_timeout)
-        .user_agent(USER_AGENT)
-        .build()?;
-
     let mut req = client
         .post(&request.url)
+        .timeout(*api_timeout)
         .header("Content-Type", "application/json")
         .body(body_json);
+
+    for (name, value) in &request.headers {
+        req = req.header(name, value);
+    }
 
     if let Some(key) = &request.api_key {
         req = req.header("Authorization", format!("Bearer {key}"));
@@ -173,12 +187,13 @@ async fn send_streaming_request(
 }
 
 pub async fn chat_completions(
+    client: &reqwest::Client,
     request: Request,
     metrics: &mut Metrics,
     api_timeout: &Duration,
 ) -> Result<(), anyhow::Error> {
     if request.chat_completion.stream {
-        let response = send_streaming_request(&request, api_timeout).await?;
+        let response = send_streaming_request(client, &request, api_timeout).await?;
 
         if !response.status().is_success() {
             return Err(handle_error_response(response, metrics).await);
@@ -206,7 +221,8 @@ pub async fn chat_completions(
 
         metrics.prefill_throughput_tps =
             calculate_prefill_tps(state.ttft.as_ref(), metrics.number_input_tokens);
-        metrics.decode_throughput_tps = calculate_decode_tps(&state.itl);
+        // use the total tokens instead, due to those endpoints with chunked text
+        metrics.decode_throughput_tps = calculate_decode_tps(metrics, &e2e_time);
         metrics.end_to_end_latency_s = e2e_time.as_secs_f64();
 
         populate_metrics(
@@ -223,6 +239,7 @@ pub async fn chat_completions(
 /// Check API endpoint connectivity by making a GET request to /models endpoint
 /// Checks if the model is in the list of available models
 pub async fn check_endpoint(
+    client: &reqwest::Client,
     url: &str,
     model: &str,
     api_key: Option<&str>,
@@ -239,7 +256,6 @@ pub async fn check_endpoint(
 
     info!("Checking endpoint connectivity: {models_endpoint} (API key: {masked_key})");
 
-    let client = Client::builder().user_agent(USER_AGENT).build()?;
     let mut request = client.get(&models_endpoint);
 
     if let Some(key) = api_key {

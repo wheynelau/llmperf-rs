@@ -2,6 +2,7 @@ use clap::Parser;
 use log::warn;
 use serde::{Serialize, Serializer};
 use std::collections::HashMap;
+use std::sync::Once;
 
 const MIN_INPUT_TOKENS: u32 = 50;
 const MIN_OUTPUT_TOKENS: u32 = 1;
@@ -131,7 +132,7 @@ pub struct Cli {
     "These will be added to the metadata field of the results. ",
     "Can be specified multiple times: --metadata name=foo --metadata bar=1 ",
     "As environment variable: METADATA='name=foo,bar=1' (comma-separated)"),
-        value_name = "KEY=VALUE", 
+        value_name = "KEY=VALUE",
         num_args = 0..,
         env)]
     #[serde(serialize_with = "serialize_metadata")]
@@ -178,6 +179,52 @@ pub struct Cli {
     )]
     #[serde(skip_serializing)]
     pub db_url: Option<String>,
+
+    /// Additional HTTP request headers sent with every chat-completions request.
+    #[arg(
+        long,
+        long_help = concat!(
+            "Extra HTTP headers sent on every chat-completions request. ",
+            "Useful for backend debug toggles (e.g. `x-bf-store-raw-request-response`, ",
+            "provider-side trace knobs) that aren't first-class CLI flags. ",
+            "Repeatable on the CLI; comma-separated in the `HEADERS` env var. ",
+            "Content-Type and Authorization cannot be overridden."
+        ),
+        value_name = "KEY=VALUE",
+        num_args = 0..,
+        env
+    )]
+    #[serde(serialize_with = "serialize_headers")]
+    pub headers: Vec<String>,
+}
+
+impl Cli {
+    /// Parse `--headers` into a `HashMap`, dropping any entry that the
+    /// transport manages. Warns once per process on the first blocked entry.
+    pub fn extra_headers(&self) -> HashMap<String, String> {
+        static BLOCKED_WARN_ONCE: Once = Once::new();
+        let mut out = HashMap::new();
+        for kv in &self.headers {
+            let Some((name, value)) = kv.split_once('=') else {
+                warn!("Ignoring malformed --headers entry '{kv}': expected 'key=value'");
+                continue;
+            };
+            if matches!(
+                name.to_ascii_lowercase().as_str(),
+                "content-type" | "authorization"
+            ) {
+                BLOCKED_WARN_ONCE.call_once(|| {
+                    warn!(
+                        "--headers cannot override transport-managed header '{name}'; dropping it. \
+                         Subsequent override attempts will be silently ignored."
+                    );
+                });
+                continue;
+            }
+            out.insert(name.to_string(), value.to_string());
+        }
+        out
+    }
 }
 
 /// Converts Vec<String> of "key=value" pairs to `HashMap`<String, String>
@@ -197,4 +244,84 @@ where
         }
     }
     map.serialize(serializer)
+}
+
+/// Converts Vec<String> of "key=value" pairs to `HashMap`<String, String> for
+/// the `headers` field. Same shape as `serialize_metadata`; standalone copy to
+/// keep the two serde attributes independent.
+fn serialize_headers<S>(headers: &[String], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut map = HashMap::new();
+    for item in headers {
+        match item.split_once('=') {
+            Some((k, v)) => {
+                map.insert(k.to_string(), v.to_string());
+            }
+            None => {
+                warn!("Ignoring malformed headers entry '{item}': expected format 'key=value'");
+            }
+        }
+    }
+    map.serialize(serializer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cli_with_headers(headers: &[&str]) -> Cli {
+        Cli {
+            headers: headers.iter().map(|s| (*s).to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn extra_headers_passes_valid_entries_through() {
+        let cli = cli_with_headers(&["X-Foo=bar", "x-other=value"]);
+        let h = cli.extra_headers();
+        assert_eq!(h.get("X-Foo"), Some(&"bar".to_string()));
+        assert_eq!(h.get("x-other"), Some(&"value".to_string()));
+        assert_eq!(h.len(), 2);
+    }
+
+    #[test]
+    fn extra_headers_drops_content_type_with_mixed_case() {
+        let cli = cli_with_headers(&[
+            "X-Foo=bar",
+            "content-type=text/plain",
+            "Content-Type=application/json",
+        ]);
+        let h = cli.extra_headers();
+        assert_eq!(h.get("X-Foo"), Some(&"bar".to_string()));
+        assert!(
+            !h.keys().any(|k| k.eq_ignore_ascii_case("content-type")),
+            "Content-Type must never be settable via --headers"
+        );
+    }
+
+    #[test]
+    fn extra_headers_drops_authorization_with_mixed_case() {
+        let cli = cli_with_headers(&[
+            "X-Foo=bar",
+            "Authorization=Bearer hacked",
+            "AUTHORIZATION=x",
+        ]);
+        let h = cli.extra_headers();
+        assert_eq!(h.get("X-Foo"), Some(&"bar".to_string()));
+        assert!(
+            !h.keys().any(|k| k.eq_ignore_ascii_case("authorization")),
+            "Authorization must never be settable via --headers"
+        );
+    }
+
+    #[test]
+    fn extra_headers_drops_malformed_entries() {
+        let cli = cli_with_headers(&["ok=value", "missing-equals"]);
+        let h = cli.extra_headers();
+        assert_eq!(h.get("ok"), Some(&"value".to_string()));
+        assert_eq!(h.len(), 1);
+    }
 }

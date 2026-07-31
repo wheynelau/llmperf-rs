@@ -1,4 +1,5 @@
 use serde_json::json;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use token_benchmark::api::chat;
@@ -35,6 +36,7 @@ async fn test_chat_completions_1_token_no_usage() {
         vec![Message {
             role: "user".to_string(),
             content: Arc::from("Say hello"),
+            reasoning: None,
         }],
         10,
         true,
@@ -45,6 +47,7 @@ async fn test_chat_completions_1_token_no_usage() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        headers: HashMap::new(),
     };
 
     let mut metrics = Metrics {
@@ -53,17 +56,18 @@ async fn test_chat_completions_1_token_no_usage() {
         ..Default::default()
     };
 
-    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
 
     if let Err(ref e) = result {
-        println!("Error details: {:?}", e);
+        println!("Error details: {e:?}");
         println!("Error type: {}", std::any::type_name_of_val(&e));
     }
 
     assert!(
         result.is_ok(),
-        "chat_completions should succeed: {:?}",
-        result
+        "chat_completions should succeed: {result:?}"
     );
 
     // Verify metrics were populated
@@ -75,9 +79,10 @@ async fn test_chat_completions_1_token_no_usage() {
         metrics.number_input_tokens, 999,
         "Input tokens should not change"
     );
-    assert_eq!(
-        metrics.decode_throughput_tps, 0.0,
-        "Decode throughput should be 0 due to single token"
+    // No usage → output keeps the pre-seeded budget; decode = budget / e2e > 0.
+    assert!(
+        metrics.decode_throughput_tps > 0.0,
+        "Decode throughput should be budget-based when usage is absent"
     );
     assert!(
         metrics.prefill_throughput_tps > 0.0,
@@ -126,6 +131,7 @@ async fn test_chat_completions_n_tokens_no_usage() {
         vec![Message {
             role: "user".to_string(),
             content: Arc::from("Say hello"),
+            reasoning: None,
         }],
         10,
         true,
@@ -136,6 +142,7 @@ async fn test_chat_completions_n_tokens_no_usage() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        headers: HashMap::new(),
     };
 
     let mut metrics = Metrics {
@@ -144,17 +151,18 @@ async fn test_chat_completions_n_tokens_no_usage() {
         ..Default::default()
     };
 
-    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
 
     if let Err(ref e) = result {
-        println!("Error details: {:?}", e);
+        println!("Error details: {e:?}");
         println!("Error type: {}", std::any::type_name_of_val(&e));
     }
 
     assert!(
         result.is_ok(),
-        "chat_completions should succeed: {:?}",
-        result
+        "chat_completions should succeed: {result:?}"
     );
 
     // Verify metrics were populated
@@ -217,6 +225,7 @@ async fn test_chat_completions_n_tokens_with_usage() {
         vec![Message {
             role: "user".to_string(),
             content: Arc::from("Say hello"),
+            reasoning: None,
         }],
         10,
         true,
@@ -227,6 +236,7 @@ async fn test_chat_completions_n_tokens_with_usage() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        headers: HashMap::new(),
     };
 
     let mut metrics = Metrics {
@@ -235,17 +245,18 @@ async fn test_chat_completions_n_tokens_with_usage() {
         ..Default::default()
     };
 
-    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
 
     if let Err(ref e) = result {
-        println!("Error details: {:?}", e);
+        println!("Error details: {e:?}");
         println!("Error type: {}", std::any::type_name_of_val(&e));
     }
 
     assert!(
         result.is_ok(),
-        "chat_completions should succeed: {:?}",
-        result
+        "chat_completions should succeed: {result:?}"
     );
 
     // Verify metrics were populated
@@ -294,6 +305,7 @@ async fn test_chat_completions_http_error() {
         vec![Message {
             role: "user".to_string(),
             content: Arc::from("Test"),
+            reasoning: None,
         }],
         10,
         true,
@@ -304,10 +316,13 @@ async fn test_chat_completions_http_error() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        headers: HashMap::new(),
     };
 
     let mut metrics = Metrics::default();
-    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
 
     assert!(
         result.is_err(),
@@ -336,7 +351,9 @@ async fn test_check_endpoint_success() {
         .mount(&mock_server)
         .await;
 
+    let client = reqwest::Client::new();
     let result = chat::check_endpoint(
+        &client,
         &format!("{}/", mock_server.uri()),
         "gpt-3.5-turbo",
         Some("test-key"),
@@ -362,7 +379,9 @@ async fn test_check_endpoint_wrong_model() {
         .mount(&mock_server)
         .await;
 
+    let client = reqwest::Client::new();
     let result = chat::check_endpoint(
+        &client,
         &format!("{}/", mock_server.uri()),
         "non-existent-model",
         Some("test-key"),
@@ -386,7 +405,9 @@ async fn test_check_usage() {
         .mount(&mock_server)
         .await;
 
+    let client = reqwest::Client::new();
     let result = chat::check_endpoint(
+        &client,
         &format!("{}/", mock_server.uri()),
         "gpt-3.5-turbo",
         Some("invalid-key"),
@@ -428,6 +449,7 @@ async fn test_chat_completions_n_tokens_with_usage_stop_reason_length() {
         vec![Message {
             role: "user".to_string(),
             content: Arc::from("Say hello"),
+            reasoning: None,
         }],
         10,
         true,
@@ -438,6 +460,7 @@ async fn test_chat_completions_n_tokens_with_usage_stop_reason_length() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        headers: HashMap::new(),
     };
     let mut metrics = Metrics {
         number_input_tokens: 999,
@@ -445,7 +468,9 @@ async fn test_chat_completions_n_tokens_with_usage_stop_reason_length() {
         ..Default::default()
     };
 
-    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
 
     if let Err(ref e) = result {
         println!("Error details: {e:?}");
@@ -529,6 +554,7 @@ async fn test_chat_completions_with_reasoning_tokens() {
         vec![Message {
             role: "user".to_string(),
             content: Arc::from("Explain the theory of relativity"),
+            reasoning: None,
         }],
         1500,
         true,
@@ -539,6 +565,7 @@ async fn test_chat_completions_with_reasoning_tokens() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        headers: HashMap::new(),
     };
 
     let mut metrics = Metrics {
@@ -547,7 +574,9 @@ async fn test_chat_completions_with_reasoning_tokens() {
         ..Default::default()
     };
 
-    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
 
     if let Err(ref e) = result {
         println!("Error details: {e:?}");
@@ -606,7 +635,7 @@ async fn test_chat_completions_both_finish_reason_and_stop_reason() {
         "\r\n\r\n",
         r#"data: {"choices":[{"index":0,"delta":{"content":" World"}}]}"#,
         "\r\n\r\n",
-        r#"data: {"choices":[{"finish_reason":"length","stop_reason":null,"index":0,"delta":{}}]}"#,
+        r#"data: {"choices":[{"finish_reason":"length","stop_reason":null,"index":0,"delta":{"content":"!"}}]}"#,
         "\r\n\r\n",
         r#"data: {"choices":[{"index":0,"delta":{}}],"usage":{"completion_tokens":10,"prompt_tokens":10,"total_tokens":20,"completion_tokens_details":{"reasoning_tokens":0}}}"#,
         "\r\n\r\n",
@@ -626,6 +655,7 @@ async fn test_chat_completions_both_finish_reason_and_stop_reason() {
         vec![Message {
             role: "user".to_string(),
             content: Arc::from("Say hello"),
+            reasoning: None,
         }],
         10,
         true,
@@ -636,6 +666,7 @@ async fn test_chat_completions_both_finish_reason_and_stop_reason() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        headers: HashMap::new(),
     };
 
     let mut metrics = Metrics {
@@ -644,7 +675,9 @@ async fn test_chat_completions_both_finish_reason_and_stop_reason() {
         ..Default::default()
     };
 
-    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
 
     assert!(
         result.is_ok(),
@@ -692,6 +725,7 @@ async fn test_chat_completions_stop_reason_only() {
         vec![Message {
             role: "user".to_string(),
             content: Arc::from("Say hello"),
+            reasoning: None,
         }],
         10,
         true,
@@ -702,6 +736,7 @@ async fn test_chat_completions_stop_reason_only() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        headers: HashMap::new(),
     };
 
     let mut metrics = Metrics {
@@ -710,7 +745,9 @@ async fn test_chat_completions_stop_reason_only() {
         ..Default::default()
     };
 
-    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
 
     assert!(
         result.is_ok(),
@@ -760,6 +797,7 @@ async fn test_chat_completions_unrecognized_finish_reason() {
         vec![Message {
             role: "user".to_string(),
             content: Arc::from("Say hello"),
+            reasoning: None,
         }],
         10,
         true,
@@ -770,6 +808,7 @@ async fn test_chat_completions_unrecognized_finish_reason() {
         url: format!("{}/v1/chat/completions", mock_server.uri()),
         api_key: Some("test-key".to_string()),
         chat_completion,
+        headers: HashMap::new(),
     };
 
     let mut metrics = Metrics {
@@ -778,7 +817,9 @@ async fn test_chat_completions_unrecognized_finish_reason() {
         ..Default::default()
     };
 
-    let result = chat::chat_completions(request, &mut metrics, &Duration::from_secs(10)).await;
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
 
     assert!(
         result.is_ok(),
@@ -789,5 +830,176 @@ async fn test_chat_completions_unrecognized_finish_reason() {
         metrics.finish_reason.unwrap(),
         FinishReason::Other,
         "Unrecognized stop_reason should map to Other"
+    );
+}
+
+#[tokio::test]
+async fn test_chat_completions_cached_tokens() {
+    let mock_server = MockServer::start().await;
+    let stream_response = concat!(
+        r#"data: {"choices":[{"index":0,"delta":{"content":" Hello"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"content":" World"}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"finish_reason":"stop","index":0,"delta":{}}]}"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{}}],"usage":{"prompt_tokens":580,"prompt_tokens_details":{"cached_read_tokens":384,"cached_tokens":384},"completion_tokens":152,"completion_tokens_details":{},"total_tokens":732}}"#,
+        "\r\n\r\n",
+        r#"data: [DONE]"#,
+        "\r\n\r\n",
+    );
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("content-type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(stream_response, "text/event-stream"))
+        .mount(&mock_server)
+        .await;
+    let chat_completion = ChatCompletionRequest::from_messages(
+        "test-model",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("Say hello"),
+            reasoning: None,
+        }],
+        10,
+        true,
+        false,
+    );
+    let request = Request {
+        url: format!("{}/v1/chat/completions", mock_server.uri()),
+        api_key: Some("test-key".to_string()),
+        chat_completion,
+        headers: HashMap::new(),
+    };
+
+    let mut metrics = Metrics {
+        number_input_tokens: 999,
+        number_output_tokens: 999,
+        ..Default::default()
+    };
+
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
+    assert!(
+        result.is_ok(),
+        "Chat completions should complete without error"
+    );
+    assert_eq!(metrics.cached_tokens, Some(384));
+    assert_eq!(metrics.number_input_tokens, 580);
+}
+
+#[tokio::test]
+async fn test_chat_completions_cached_tokens_none_when_prompt_tokens_details_absent() {
+    let mock_server = MockServer::start().await;
+    // GLM-style response: usage emitted, but no `prompt_tokens_details` key
+    // at all (the field is absent, not present-with-null). cached_tokens has
+    // nowhere to come from, so it stays None.
+    let stream_response = concat!(
+        r#"data: {"choices":[{"index":0,"delta":{"content":" Hello"}}]"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{"content":" World"}}]"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"finish_reason":"stop","index":0,"delta":{}}]"#,
+        "\r\n\r\n",
+        r#"data: {"choices":[{"index":0,"delta":{}}],"usage":{"prompt_tokens":196,"completion_tokens":363,"completion_tokens_details":{},"total_tokens":559}}"#,
+        "\r\n\r\n",
+        r#"data: [DONE]"#,
+        "\r\n\r\n",
+    );
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("content-type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(stream_response, "text/event-stream"))
+        .mount(&mock_server)
+        .await;
+    let chat_completion = ChatCompletionRequest::from_messages(
+        "test-model",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("Say hello"),
+            reasoning: None,
+        }],
+        10,
+        true,
+        false,
+    );
+    let request = Request {
+        url: format!("{}/v1/chat/completions", mock_server.uri()),
+        api_key: Some("test-key".to_string()),
+        chat_completion,
+        headers: HashMap::new(),
+    };
+
+    let mut metrics = Metrics {
+        number_input_tokens: 999,
+        number_output_tokens: 999,
+        ..Default::default()
+    };
+
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
+    assert!(
+        result.is_ok(),
+        "Chat completions should complete without error"
+    );
+    assert_eq!(
+        metrics.cached_tokens, None,
+        "cached_tokens must stay None when the response omits prompt_tokens_details"
+    );
+    assert_eq!(metrics.number_input_tokens, 196);
+    assert_eq!(metrics.number_output_tokens, 363);
+}
+
+#[tokio::test]
+async fn test_chat_completions_user_headers_reach_server() {
+    let mock_server = MockServer::start().await;
+
+    let stream_response = concat!(
+        r#"data: {"choices":[{"finish_reason":"stop","index":0,"delta":{}}]}"#,
+        "\r\n\r\n",
+        r#"data: [DONE]"#,
+        "\r\n\r\n",
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("content-type", "application/json"))
+        .and(header("authorization", "Bearer test-key"))
+        .and(header("x-trace", "abc-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(stream_response, "text/event-stream"))
+        .mount(&mock_server)
+        .await;
+
+    let chat_completion = ChatCompletionRequest::from_messages(
+        "test-model",
+        vec![Message {
+            role: "user".to_string(),
+            content: Arc::from("hi"),
+            reasoning: None,
+        }],
+        10,
+        true,
+        false,
+    );
+
+    let mut headers = HashMap::new();
+    headers.insert("x-trace".to_string(), "abc-123".to_string());
+
+    let request = Request {
+        url: format!("{}/v1/chat/completions", mock_server.uri()),
+        api_key: Some("test-key".to_string()),
+        chat_completion,
+        headers,
+    };
+
+    let mut metrics = Metrics::default();
+    let client = reqwest::Client::new();
+    let result =
+        chat::chat_completions(&client, request, &mut metrics, &Duration::from_secs(10)).await;
+    assert!(
+        result.is_ok(),
+        "request with user-supplied header should succeed: {result:?}"
     );
 }
