@@ -4,3 +4,4 @@ Cargo.lock
 # examples were used for testing, will add in future if necessary
 /examples
 .env
+!assets/llama-tokenizer.json

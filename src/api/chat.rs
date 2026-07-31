@@ -208,7 +208,10 @@ pub async fn chat_completions(
             match event_result? {
                 Sse::Comment(_) => {}
                 Sse::Done => break,
-                Sse::Event(data) => handle_response(&data, &mut state, metrics),
+                Sse::Event(data) => {
+                    debug!("SSE data: {data}");
+                    handle_response(&data, &mut state, metrics);
+                }
             }
         }
 

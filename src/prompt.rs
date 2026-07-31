@@ -394,11 +394,9 @@ mod reasoning_round_trip_tests {
     use super::*;
     use crate::session::MultiTurnSession;
     use std::sync::Arc;
-    use tokenizers::Tokenizer;
 
     fn test_config() -> PromptConfig {
-        let tokenizer =
-            Tokenizer::from_pretrained("hf-internal-testing/llama-tokenizer", None).unwrap();
+        let tokenizer = crate::file::load_tokenizer("hf-internal-testing/llama-tokenizer").unwrap();
         PromptConfig {
             prompt_encoding: tokenizer.encode_fast(PROMPT_TEXT, false).unwrap(),
             sonnet_lines: Arc::from(Vec::<tokenizers::Encoding>::new()),

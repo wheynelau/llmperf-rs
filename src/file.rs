@@ -10,6 +10,10 @@ use tokio::sync::mpsc;
 
 const TIME_FORMAT: &str = "%Y%m%d_%H%M%S%z";
 
+const DEFAULT_TOKENIZER_ID: &str = "hf-internal-testing/llama-tokenizer";
+const BAKED_TOKENIZER_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/llama-tokenizer.json.zst"));
+
 /// Ensure the results directory exists and is valid.
 fn ensure_results_dir_exists(results_dir: &str) -> Result<&Path> {
     let results_path = Path::new(results_dir);
@@ -135,6 +139,14 @@ pub fn load_tokenizer(path: &str) -> Result<Tokenizer, Error> {
         return Tokenizer::from_file(path).map_err(|e| {
             anyhow::anyhow!("Failed to load tokenizer from local file '{path}': {e}")
         });
+    }
+
+    // Use the baked-in tokenizer for the default identifier to avoid network
+    if path == DEFAULT_TOKENIZER_ID {
+        let json = zstd::decode_all(BAKED_TOKENIZER_BYTES)
+            .map_err(|e| anyhow::anyhow!("Failed to decompress baked-in tokenizer: {e}"))?;
+        return Tokenizer::from_bytes(&json)
+            .map_err(|e| anyhow::anyhow!("Failed to load baked-in tokenizer: {e}"));
     }
 
     // If the path does not exist locally, try to load from a pretrained source.

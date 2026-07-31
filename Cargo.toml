@@ -1,9 +1,10 @@
 [package]
 name = "llmperf"
-version = "0.7.0-rc1"
+version = "0.7.1"
 edition = "2024"
 repository = "https://github.com/wheynelau/llmperf-rs"
 description = "A benchmarking tool for large language model (LLM) inference performance."
+build = "build.rs"
 
 [lib]
 name = "token_benchmark"
@@ -29,6 +30,9 @@ sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio
 statrs = "0.18.0"
 tokenizers = { version = "0.22.2", features = ["hf-hub", "http", "rustls-tls"] }
 tokio = { version = "1.52.0", features = ["full"] }
+zstd = "0.13"
+
+[build-dependencies]
 zstd = "0.13"
 
 [[bench]]

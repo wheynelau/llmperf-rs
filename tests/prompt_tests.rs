@@ -1,12 +1,9 @@
+use token_benchmark::file::load_tokenizer;
 use token_benchmark::prompt::{self, create_prompt, randomly_sample_sonnet_lines_prompt};
 
 #[test]
 fn create_prompt_functional() {
-    // This test will fail if it is unable to download
-    // TODO: Download json offline to keep in the repo
-    let tokenizer =
-        tokenizers::Tokenizer::from_pretrained("hf-internal-testing/llama-tokenizer", None)
-            .unwrap();
+    let tokenizer = load_tokenizer("hf-internal-testing/llama-tokenizer").unwrap();
 
     let raw_lines = ["Hello world\n", "Test line\n", "Another line\n"];
 
@@ -43,7 +40,7 @@ macro_rules! test_tokenizer {
 }
 
 fn test_tokenizer_impl(tokenizer_name: &str) {
-    let tokenizer = match tokenizers::Tokenizer::from_pretrained(tokenizer_name, None) {
+    let tokenizer = match load_tokenizer(tokenizer_name) {
         Ok(t) => t,
         Err(e) => {
             println!("Skipping tokenizer {tokenizer_name} due to error: {e:?}");

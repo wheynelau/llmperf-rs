@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-31
+
+### Added
+
+- Default tokenizer (`hf-internal-testing/llama-tokenizer`) is now baked into the binary. A `build.rs` compresses the tokenizer JSON with zstd at compile time, so the default path requires no network access and no HuggingFace Hub dependency.
+
+### Changed
+
+- Tests now use the baked-in tokenizer instead of downloading from HuggingFace Hub.
+
 ## [0.7.0-rc1] - 2026-07-31
 
 ### Added
@@ -69,7 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Incremental metrics via an `mpsc` sender, allowing results to be streamed out of `run_session` as they arrive.
 
-[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.7.0-rc1...HEAD
+[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/wheynelau/llmperf-rs/compare/v0.7.0-rc1...v0.7.1
 [0.7.0-rc1]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.3...v0.7.0-rc1
 [0.6.3]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.1...v0.6.2
