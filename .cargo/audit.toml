@@ -1,0 +1,14 @@
+# cargo-audit configuration
+# https://github.com/RustSec/rustsec/blob/main/cargo-audit/audit.toml.example
+
+[advisories]
+ignore = [
+    # rsa 0.9.10 — Marvin Attack timing side-channel (RUSTSEC-2023-0071).
+    # No fixed upstream version exists. rsa is pulled in only via sqlx-mysql,
+    # which is NOT enabled (this project uses the postgres backend exclusively),
+    # so the crate is never compiled into the binary and the side-channel is
+    # not reachable. Revisit once rsa publishes a fix.
+    "RUSTSEC-2023-0071",
+]
+informational_warnings = ["unmaintained"]
+severity_threshold = "low"
