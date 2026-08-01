@@ -16,7 +16,7 @@ jobs:
     # Only run if this is an actual release (not a PR)
     if: ${{ fromJson(inputs.plan).announcement_tag != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
