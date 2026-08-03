@@ -152,9 +152,9 @@ async fn main() -> Result<()> {
     info!("Total elapsed time: {elapsed:?}");
     info!("Collected metrics from {} tasks", collected_metrics.len());
 
-    // Check if any tasks were completed
-    if completed_tasks == 0 {
-        warn!("No tasks completed successfully. Skipping summary generation and results saving.");
+    // Check if any metrics were collected
+    if collected_metrics.is_empty() {
+        warn!("No metrics were collected. Skipping summary generation and results saving.");
         return Ok(());
     }
 
