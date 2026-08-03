@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `cache_hit_rate` no longer nulls the whole run when a turn omits `cached_tokens`. An unobserved turn is now skipped from the numerator but its re-sent history stays in the denominator, so it dilutes the ratio instead. An all-`None` run still reports `None` (distinct from observed `0.0`).
+- TTFT is now measured from before the request is sent (so it includes network round-trip + server prefill) and ignores empty/role-announcement deltas, so it reflects time to the first real token.
+
 ## [0.7.1] - 2026-07-31
 
 ### Added

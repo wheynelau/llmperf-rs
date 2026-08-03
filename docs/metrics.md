@@ -80,7 +80,9 @@ Aggregated: [100, 200, 300, 400, 500, 600]
 
 ### TTFT (Time To First Token)
 
-TTFT calculated as the difference in timing from the POST request to the first token.
+TTFT is measured from the moment the request is issued (before it is sent) to
+the first real token received. Empty/role-announcement deltas are ignored, so
+the timer reflects time to the first actual token, not to the first event.
 
 ### End to End Latency
 
@@ -106,19 +108,6 @@ $`\frac{\mathrm{number\_output\_tokens}}{\mathrm{final\_time} - \mathrm{decode\_
 
 ### Cache Hit Rate
 
-The fraction of all prior-turn tokens reused from KV cache.
-
-$`\frac{\sum \text{cached\_tokens}}{\sum \text{cumulative\_prior\_tokens}}`$
-
-- `cached_tokens` comes from the API's `prompt_tokens_details.cached_tokens`
-- `cumulative_prior_tokens` is the sum of `input + output` tokens across all turns before the current one (turn N's prompt contains the full history)
-- Turn 0 (cold start) is excluded — there is nothing to reuse
-- If any warm turn omits `cached_tokens`, the rate is `null`
-
-100% means every prior token was served from cache. In a perfect cache, `cached_tokens` equals `cumulative_prior_tokens` on every turn.
-
-### Cache Hit Rate
-
 Available in multi-turn runs (`--multi-turn N`, `N > 1`). Reports how much of
 the re-sent conversation history the provider actually served from its prefix
 cache.
@@ -132,7 +121,8 @@ cache_hit_rate = Σ cached_tokens / Σ total_tokens_of_non_final_turns
 - **Numerator**: the sum of `cached_tokens` reported by the endpoint on each
   turn, read from `prompt_tokens_details.cached_tokens` (or
   `cached_read_tokens`, whichever the provider sends) in the streamed `usage`
-  object. `None` means the endpoint did not report the field at all.
+  object. A turn reporting `None` (endpoint omitted the field) contributes
+  nothing to the numerator.
 - **Denominator**: the sum of each turn's total tokens (input + output) for
   every turn *except* the last turn of each session. The last turn's content is
   never re-sent in a later request, so it can never be served from cache and is
@@ -148,17 +138,21 @@ in the denominator dilutes the ratio and measures the wrong thing.
 What prefix caching actually reuses is the conversation history from previous
 turns — the assistant's prior outputs (and prior user prompts) that get echoed
 back in the next request. So the meaningful ratio is cached tokens against the
-*previously sent* content: `cache / previous output`, not `cache / input`.
+*previously sent* content: `cache / prior content`, not `cache / input`.
 
 **Edge cases**
 
-- `None` in single-turn mode (`--multi-turn 1`): there is no prior history to
-  re-send, so the denominator is zero.
-- `None` if any non-final turn reports `cached_tokens = None`: an endpoint that
-  omits the field on some turns makes the ratio unmeasurable, so the whole run
-  is reported as `None` rather than a misleading partial value.
-- Cold-start turns report `cached_tokens = 0`, so they contribute nothing to
-  the numerator and need no special handling.
+- **All turns `None`**: no turn reported `cached_tokens`, so the ratio is
+  reported as `None` — distinct from having observed zero hits.
+- **Observed zeros**: a run where every turn reports `cached_tokens = 0`
+  surfaces as `Some(0.0)`, not `None`.
+- **Mixed, some turns `None`**: an unobserved turn is skipped from the
+  numerator but its re-sent history still counts toward the denominator, so it
+  dilutes the ratio rather than nulling it.
+- **Single-turn mode (`--multi-turn 1`)**: there is no prior history to
+  re-send, so the denominator is zero and the rate is `None`.
+- **Cold start**: turn 0 reports `cached_tokens = 0` (or omits it), contributing
+  nothing either way.
 
 Per-turn `cached_tokens` (with `turn_index`) is also available in the
 individual responses file for debugging.

@@ -94,10 +94,8 @@ pub struct SummaryBuilder {
     decode_throughput_tps_vec: Vec<f64>,
     input_tokens_vec: Vec<u32>,
     output_tokens_vec: Vec<u32>,
-    /// Sum of observed `cached_tokens`. `None` while no turn has reported a cache
-    /// value yet; `Some(n)` once at least one turn contributed. Lets us distinguish
-    /// "no observations at all" (`None`, `cache_hit_rate = None`) from "observed
-    /// zero hits" (`Some(0)`, `cache_hit_rate = Some(0.0)`).
+    /// Sum of observed `cached_tokens`. `None` = no turn reported one yet, so
+    /// `cache_hit_rate` is `None` (vs `Some(0.0)` for observed zero hits).
     cached_tokens_sum: Option<u64>,
     cached_total_tokens_sum: u64,
     error_code_frequency: std::collections::HashMap<u16, u32>,
@@ -144,29 +142,19 @@ impl SummaryBuilder {
         self.output_tokens_vec.push(output_tokens);
     }
     fn add_total_tokens(&mut self, total_tokens: u32, turn_index: usize) {
-        // Cache-hit-rate denominator: sum the total tokens of every turn that
-        // gets re-sent in a later request, i.e. every turn except the last turn
-        // of each session (the last turn's content is never re-sent, so it can
-        // never be served from cache). This includes turns whose `cached_tokens`
-        // was `None` (unobserved): their re-sent history is still genuinely
-        // cacheable, so it counts toward the total even though it contributes
-        // nothing to the numerator. `multi_turn` must be set on the builder
-        // (via `args`) before metrics are added.
+        // Cache-hit-rate denominator: every turn except the last of a session,
+        // since the last turn's content is never re-sent (so never cacheable).
+        // This includes None turns, whose re-sent history is still cacheable.
+        // `multi_turn` must be set (via `args`) before metrics are added.
         if self.args.multi_turn > 1 && turn_index as u32 != self.args.multi_turn - 1 {
             self.cached_total_tokens_sum += total_tokens as u64;
         }
     }
 
-    /// Accumulate one observation into the cache-hit numerator.
-    ///
-    /// Sums every reported `cached_tokens` value. A turn that reports `None`
-    /// (endpoint did not report cache stats) contributes nothing to the
-    /// numerator -- but its re-sent tokens remain in the denominator via
-    /// `add_total_tokens`, so an unobserved turn keeps the ratio consistent
-    /// (its cacheable history is still part of the total). The accumulator is
-    /// `Option<u64>` so an all-None run stays `None` (and `cache_hit_rate`
-    /// becomes `None`) -- distinct from a run that observed zero hits
-    /// (`Some(0)`, surfaces as `Some(0.0)`).
+    /// Sum reported `cached_tokens` into the numerator. A `None` turn contributes
+    /// nothing (its re-sent history still counts toward the denominator via
+    /// `add_total_tokens`). Kept `Option` so an all-None run stays `None`
+    /// instead of collapsing to `Some(0.0)`.
     fn add_cached_tokens(&mut self, cached_tokens: Option<u32>) {
         if let Some(cached) = cached_tokens {
             self.cached_tokens_sum = Some(self.cached_tokens_sum.unwrap_or(0) + cached as u64);

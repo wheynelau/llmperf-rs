@@ -56,11 +56,8 @@ struct StreamState {
 }
 
 impl StreamState {
-    /// `prefill_start` MUST be captured by the caller **before** the HTTP
-    /// request is sent. Putting `Instant::now()` here would silently collapse
-    /// ttft to microseconds: by the time `send_streaming_request` returns,
-    /// the request has already been sent *and* the response headers received.
-    /// The timer has to include network round-trip + server-side prefill.
+    /// Captured by the caller before the request is sent, so the timer
+    /// includes network round-trip + server-side prefill (see call site).
     fn new(max_tokens: u32, prefill_start: Instant) -> Self {
         Self {
             final_str: String::with_capacity(max_tokens as usize * AVG_BYTES_PER_TOKEN),
@@ -76,11 +73,9 @@ impl StreamState {
 
 /// Process a token delta (content or reasoning) and update timing metrics.
 ///
-/// Empty deltas are silently dropped. OpenAI-compatible servers commonly emit
-/// a first SSE event with `{"role":"assistant","content":""}` -- a role
-/// announcement, not a real token. If we counted it, ttft would measure the
-/// time the SSE parser spent finding an empty string, not the time to first
-/// real chunk.
+/// Empty deltas are dropped: servers emit a first SSE event with
+/// `{"role":"assistant","content":""}` that is a role announcement, not a
+/// token. Counting it would make ttft measure the time to an empty string.
 fn process_token_delta(
     content: Option<&str>,
     ttft: &mut Option<Duration>,
@@ -88,11 +83,11 @@ fn process_token_delta(
     itl: &mut Vec<Duration>,
     prefill_start: Instant,
 ) {
-    // Drop empty deltas (role-announcement events, etc.). See the doc above.
-    let _delta = match content {
-        Some(s) if !s.is_empty() => s,
+    // Drop empty deltas (role-announcement events).
+    match content {
+        Some(s) if !s.is_empty() => {}
         _ => return,
-    };
+    }
     if ttft.is_none() {
         *ttft = Some(prefill_start.elapsed());
     } else if let Some(prev_time) = *prev_token {
@@ -207,10 +202,7 @@ pub async fn chat_completions(
     api_timeout: &Duration,
 ) -> Result<(), anyhow::Error> {
     if request.chat_completion.stream {
-        // Capture TTFT's start BEFORE the request is sent: the timer needs to
-        // include the network round-trip and server-side prefill, not just the
-        // body read (which is what we'd get if we started it after
-        // send_streaming_request returned).
+        // Capture TTFT's start before sending, so it includes network + prefill.
         let prefill_start = Instant::now();
         let response = send_streaming_request(client, &request, api_timeout).await?;
 
