@@ -27,7 +27,7 @@ serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde_json = "1.0.149"
 serde_with = "3.18.0"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json", "macros"] }
-statrs = "0.18.0"
+statrs = "0.19.0"
 tokenizers = { version = "0.22.2", features = ["hf-hub", "http", "rustls-tls"] }
 tokio = { version = "1.52.0", features = ["full"] }
 zstd = "0.13"
