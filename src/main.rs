@@ -62,6 +62,10 @@ async fn main() -> Result<()> {
 
     let mut receiver = task_stream.receiver;
 
+    // Drop the main-thread sender so the channel closes once every session
+    // sender drops, letting `receiver.recv()` return None and the loop end.
+    drop(task_stream.sender);
+
     // `stream` is a local impl Stream + already Unpin (TaskStream::stream), so
     // pin it once and poll it in select so the session futures keep sending into
     // the channel. The receiver closes when every session sender drops.
