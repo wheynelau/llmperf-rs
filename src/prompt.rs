@@ -3,8 +3,8 @@ use futures::Stream;
 use futures::stream::{self, StreamExt};
 use indicatif::ProgressBar;
 use log::warn;
-use rand::RngExt;
 use rand::seq::SliceRandom;
+use rand::{Rng, RngExt};
 use statrs::distribution::{ContinuousCDF, Normal};
 use std::collections::HashMap;
 use std::sync::{Arc, Once};
@@ -76,7 +76,12 @@ pub fn randomly_sample_sonnet_lines_prompt(
 
     let remaining_prompt_tokens = num_prompt_tokens - prompt_token_len;
 
-    let result_ids = create_prompt(prompt_ids, sonnet_lines, remaining_prompt_tokens);
+    let result_ids = create_prompt(
+        prompt_ids,
+        sonnet_lines,
+        remaining_prompt_tokens,
+        &mut rand::rng(),
+    );
     let prompt = tokenizer.decode(&result_ids, false).unwrap();
     let actual_token_count = result_ids.len() as u32;
 
@@ -86,10 +91,10 @@ pub fn create_prompt(
     prompt_ids: &[u32],
     sonnet_lines: &[tokenizers::Encoding],
     remaining_prompt_tokens: u32,
+    rng: &mut impl Rng,
 ) -> Vec<u32> {
     let mut shuffled_indices: Vec<usize> = (0..sonnet_lines.len()).collect();
-    let mut rng = rand::rng();
-    shuffled_indices.shuffle(&mut rng);
+    shuffled_indices.shuffle(rng);
 
     let mut result_ids: Vec<u32> =
         Vec::with_capacity(remaining_prompt_tokens as usize + prompt_ids.len());
