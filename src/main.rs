@@ -1,6 +1,7 @@
 use anyhow::Result;
 use futures::StreamExt;
 use log::{info, warn};
+use std::sync::Once;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant, timeout};
 
@@ -12,6 +13,10 @@ use token_benchmark::prompt;
 #[tokio::main]
 #[allow(clippy::too_many_lines)]
 async fn main() -> Result<()> {
+    // Log one warning if forwarding a metric to the saver fails; sends stay
+    // non-fatal. Declared first so clippy doesn't flag items-after-statements.
+    static SAVER_SEND_WARNED: Once = Once::new();
+
     env_logger::init();
 
     let app_config = config::load_configuration().await?;
@@ -71,37 +76,50 @@ async fn main() -> Result<()> {
     // the channel. The receiver closes when every session sender drops.
     let process = async {
         tokio::pin!(stream);
+
+        // Shared by both arms so every metric is: (1) counted, (2) shoved into
+        // `collected_metrics` stripped (content/reasoning = None) for the
+        // summary, and (3) forwarded ORIGINAL to `saver_tx` so the
+        // individual-responses file keeps the full data.
+        let mut handle_metric = |metric: metrics::Metrics| {
+            if metric.error_msg.is_some() {
+                failed_tasks += 1;
+            } else {
+                completed_tasks += 1;
+            }
+
+            let mut lean = metric.clone();
+            lean.content = None;
+            lean.reasoning = None;
+            collected_metrics.push(lean);
+
+            if saver_tx.send(metric).is_err() {
+                SAVER_SEND_WARNED.call_once(|| {
+                    warn!(
+                        "Failed to forward a metric to the results saver; \
+                         the saver may not be active"
+                    );
+                });
+            }
+        };
+
         loop {
             tokio::select! {
                 stream_item = stream.next() => {
-                    // Stream ended => every session finished. Drain any metrics
-                    // still buffered in the channel, then stop.
+                    // Stream ended: drain any buffered metrics, then stop.
                     if stream_item.is_none() {
-                        while let Some(mut metric) = receiver.recv().await {
-                            if metric.error_msg.is_some() {
-                                failed_tasks += 1;
-                            } else {
-                                completed_tasks += 1;
-                            }
-                            metric.content = None;
-                            metric.reasoning = None;
-                            let _ = saver_tx.send(metric.clone());
-                            collected_metrics.push(metric);
+                        while let Some(metric) = receiver.recv().await {
+                            handle_metric(metric);
                         }
                         break;
                     }
+                    // `Some(Vec<Metrics>)` — the per-session bundle. Intentionally
+                    // discarded: metrics already flowed one-by-one via the
+                    // channel. Single delivery path; do NOT forward it again.
                 }
                 maybe_metric = receiver.recv() => {
-                    let Some(mut metric) = maybe_metric else { break; };
-                    if metric.error_msg.is_some() {
-                        failed_tasks += 1;
-                    } else {
-                        completed_tasks += 1;
-                    }
-                    metric.content = None;
-                    metric.reasoning = None;
-                    let _ = saver_tx.send(metric.clone());
-                    collected_metrics.push(metric);
+                    let Some(metric) = maybe_metric else { break; };
+                    handle_metric(metric);
                 }
             }
         }
@@ -150,7 +168,7 @@ async fn main() -> Result<()> {
         warn!("Failed tasks: {failed_tasks}");
     }
     info!("Total elapsed time: {elapsed:?}");
-    info!("Collected metrics from {} tasks", collected_metrics.len());
+    info!("Collected {} metrics", collected_metrics.len());
 
     // Check if any metrics were collected
     if collected_metrics.is_empty() {
