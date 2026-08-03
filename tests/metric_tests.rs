@@ -134,21 +134,67 @@ fn test_cache_hit_rate_zero_when_nothing_cached() {
     assert_eq!(b.build().cache_hit_rate, Some(0.0));
 }
 
-/// An unobserved warm turn (`cached_tokens = None`) poisons the whole run.
+/// An unobserved turn (`cached_tokens = None`) is skipped from the numerator
+/// but its re-sent history stays in the denominator.
 #[test]
-fn test_cache_hit_rate_none_when_any_turn_unobserved() {
+fn test_cache_hit_rate_skips_unobserved_numerator_keeps_denominator() {
     let mut b = builder(2);
+    // turn 0: observed 20 cached of 20 total.
+    // turn 1: unobserved (None) -- contributes nothing to numerator, but its
+    //         10 re-sent tokens remain in the denominator.
+    // => rate = (0 + .. but turn 0 cached 0) : numerator 0, denominator 30.
     add(&mut b, &turn(20, Some(0), 0));
     add(&mut b, &turn(10, None, 1));
-    assert_eq!(b.build().cache_hit_rate, None);
+    assert_eq!(b.build().cache_hit_rate, Some(0.0));
 }
 
 #[test]
+fn test_cache_hit_rate_with_unobserved_turn_keeps_partial_denominator() {
+    // Three-turn session (turn 2 is last, excluded from the denominator).
+    let mut b = builder(3);
+    // turn 0: observed 5 cached of 20 total.
+    // turn 1: unobserved (None) -- skipped from numerator, but its 10 re-sent
+    //         tokens remain in the denominator.
+    // turn 2: last turn, never re-sent, excluded from denominator.
+    add(&mut b, &turn(20, Some(5), 0));
+    add(&mut b, &turn(10, None, 1));
+    add(&mut b, &turn(5, Some(0), 2));
+    // numerator = 5, denominator = 20 + 10 = 30 => 1/6.
+    let rate = b.build().cache_hit_rate;
+    let expected = Some(5.0 / 30.0);
+    assert_eq!(
+        rate, expected,
+        "unobserved turn must dilute the observed rate, not null it out"
+    );
+}
+
+/// If no turn reported `cached_tokens` at all, the numerator has no observations
+/// and `cache_hit_rate` is `None` -- not `Some(0.0)`. The metric should not
+/// silently equate "could not observe" with "observed zero hits."
+#[test]
 fn test_cache_hit_rate_none_when_all_turns_unobserved() {
-    let mut b = builder(2);
+    let mut b = builder(3);
+    // All three turns omitted `cached_tokens`. Even though the denominator has
+    // observations to feed, no turn contributed to the numerator.
     add(&mut b, &turn(20, None, 0));
     add(&mut b, &turn(10, None, 1));
-    assert_eq!(b.build().cache_hit_rate, None);
+    add(&mut b, &turn(5, None, 2));
+    assert_eq!(
+        b.build().cache_hit_rate,
+        None,
+        "all-None run must report `cache_hit_rate = None`, not Some(0.0)"
+    );
+}
+
+/// Every turn reported `cached_tokens = Some(0)`: we observed zeros, so the
+/// rate is `Some(0.0)`. Distinct from the all-None case.
+#[test]
+fn test_cache_hit_rate_zero_when_all_observations_are_zero() {
+    let mut b = builder(3);
+    add(&mut b, &turn(20, Some(0), 0));
+    add(&mut b, &turn(10, Some(0), 1));
+    add(&mut b, &turn(5, Some(0), 2));
+    assert_eq!(b.build().cache_hit_rate, Some(0.0));
 }
 
 /// Perfect caching: turn 1 cached the entire prior conversation (700 = turn 0's

@@ -94,9 +94,12 @@ pub struct SummaryBuilder {
     decode_throughput_tps_vec: Vec<f64>,
     input_tokens_vec: Vec<u32>,
     output_tokens_vec: Vec<u32>,
-    cached_tokens_sum: u64,
+    /// Sum of observed `cached_tokens`. `None` while no turn has reported a cache
+    /// value yet; `Some(n)` once at least one turn contributed. Lets us distinguish
+    /// "no observations at all" (`None`, `cache_hit_rate = None`) from "observed
+    /// zero hits" (`Some(0)`, `cache_hit_rate = Some(0.0)`).
+    cached_tokens_sum: Option<u64>,
     cached_total_tokens_sum: u64,
-    any_warm_unobserved: bool,
     error_code_frequency: std::collections::HashMap<u16, u32>,
     finish_reasons: std::collections::HashMap<FinishReason, u32>,
     number_errors: u32,
@@ -144,7 +147,10 @@ impl SummaryBuilder {
         // Cache-hit-rate denominator: sum the total tokens of every turn that
         // gets re-sent in a later request, i.e. every turn except the last turn
         // of each session (the last turn's content is never re-sent, so it can
-        // never be served from cache). `multi_turn` must be set on the builder
+        // never be served from cache). This includes turns whose `cached_tokens`
+        // was `None` (unobserved): their re-sent history is still genuinely
+        // cacheable, so it counts toward the total even though it contributes
+        // nothing to the numerator. `multi_turn` must be set on the builder
         // (via `args`) before metrics are added.
         if self.args.multi_turn > 1 && turn_index as u32 != self.args.multi_turn - 1 {
             self.cached_total_tokens_sum += total_tokens as u64;
@@ -154,14 +160,16 @@ impl SummaryBuilder {
     /// Accumulate one observation into the cache-hit numerator.
     ///
     /// Sums every reported `cached_tokens` value. A turn that reports `None`
-    /// (endpoint did not report cache stats) poisons the whole run: the
-    /// `cache_hit_rate` becomes `None` because an unobserved warm turn makes
-    /// the ratio meaningless. Cold-start turns report `cached_tokens = 0`, so
-    /// they contribute nothing and need no special handling.
+    /// (endpoint did not report cache stats) contributes nothing to the
+    /// numerator -- but its re-sent tokens remain in the denominator via
+    /// `add_total_tokens`, so an unobserved turn keeps the ratio consistent
+    /// (its cacheable history is still part of the total). The accumulator is
+    /// `Option<u64>` so an all-None run stays `None` (and `cache_hit_rate`
+    /// becomes `None`) -- distinct from a run that observed zero hits
+    /// (`Some(0)`, surfaces as `Some(0.0)`).
     fn add_cached_tokens(&mut self, cached_tokens: Option<u32>) {
-        match cached_tokens {
-            Some(cached) => self.cached_tokens_sum += cached as u64,
-            None => self.any_warm_unobserved = true,
+        if let Some(cached) = cached_tokens {
+            self.cached_tokens_sum = Some(self.cached_tokens_sum.unwrap_or(0) + cached as u64);
         }
     }
 
@@ -236,10 +244,11 @@ impl SummaryBuilder {
             0.0
         };
 
-        let cache_hit_rate = if self.any_warm_unobserved || self.cached_total_tokens_sum == 0 {
-            None
-        } else {
-            Some(self.cached_tokens_sum as f64 / self.cached_total_tokens_sum as f64)
+        let cache_hit_rate = match self.cached_tokens_sum {
+            Some(sum) if self.cached_total_tokens_sum > 0 => {
+                Some(sum as f64 / self.cached_total_tokens_sum as f64)
+            }
+            _ => None,
         };
 
         SummaryMetrics {
@@ -311,5 +320,61 @@ mod tests {
 
         let summary = builder.build();
         assert_eq!(summary.decode_throughput_tps.mean, 10.0);
+    }
+    #[test]
+    fn test_cache_hit_rate_keeps_none_turns_in_denominator() {
+        use crate::args::Cli;
+        let mut args = Cli::default();
+        // multi_turn=3 means turn indices 0 and 1 are re-sent (cacheable), turn 2 is last.
+        args.multi_turn = 3;
+
+        let mut builder = SummaryBuilder::new();
+        builder.args(args);
+
+        // Turn 0: observed cached=100 of re-sent 200 tokens.
+        builder.add_metric(&Metrics {
+            number_total_tokens: 200,
+            cached_tokens: Some(100),
+            turn_index: 0,
+            ..Metrics::default()
+        });
+        // Turn 1: unobserved (None) -- skipped from numerator but stays in denominator.
+        builder.add_metric(&Metrics {
+            number_total_tokens: 100,
+            cached_tokens: None,
+            turn_index: 1,
+            ..Metrics::default()
+        });
+        // Turn 2: last turn, never re-sent, excluded from denominator.
+        builder.add_metric(&Metrics {
+            number_total_tokens: 50,
+            cached_tokens: Some(0),
+            turn_index: 2,
+            ..Metrics::default()
+        });
+
+        let summary = builder.build();
+        // numerator=100, denominator=200+100=300 => 1/3. No longer None.
+        assert_eq!(summary.cache_hit_rate, Some(1.0 / 3.0));
+    }
+
+    #[test]
+    fn test_cache_hit_rate_none_when_no_cacheable_history() {
+        use crate::args::Cli;
+        let mut args = Cli::default();
+        // Single-turn mode: no turn is re-sent, so nothing is cacheable.
+        args.multi_turn = 1;
+
+        let mut builder = SummaryBuilder::new();
+        builder.args(args);
+        builder.add_metric(&Metrics {
+            number_total_tokens: 100,
+            cached_tokens: Some(100),
+            turn_index: 0,
+            ..Metrics::default()
+        });
+
+        let summary = builder.build();
+        assert_eq!(summary.cache_hit_rate, None);
     }
 }
