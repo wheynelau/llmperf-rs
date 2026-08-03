@@ -56,11 +56,13 @@ struct StreamState {
 }
 
 impl StreamState {
-    fn new(max_tokens: u32) -> Self {
+    /// Captured by the caller before the request is sent, so the timer
+    /// includes network round-trip + server-side prefill (see call site).
+    fn new(max_tokens: u32, prefill_start: Instant) -> Self {
         Self {
             final_str: String::with_capacity(max_tokens as usize * AVG_BYTES_PER_TOKEN),
             reasoning_str: String::new(),
-            prefill_start: Instant::now(),
+            prefill_start,
             ttft: None,
             prev_token: None,
             itl: Vec::with_capacity(max_tokens as usize),
@@ -69,7 +71,11 @@ impl StreamState {
     }
 }
 
-/// Process a token delta (content or reasoning) and update timing metrics
+/// Process a token delta (content or reasoning) and update timing metrics.
+///
+/// Empty deltas are dropped: servers emit a first SSE event with
+/// `{"role":"assistant","content":""}` that is a role announcement, not a
+/// token. Counting it would make ttft measure the time to an empty string.
 fn process_token_delta(
     content: Option<&str>,
     ttft: &mut Option<Duration>,
@@ -77,14 +83,17 @@ fn process_token_delta(
     itl: &mut Vec<Duration>,
     prefill_start: Instant,
 ) {
-    if content.is_some() {
-        if ttft.is_none() {
-            *ttft = Some(prefill_start.elapsed());
-        } else if let Some(prev_time) = *prev_token {
-            itl.push(prev_time.elapsed());
-        }
-        *prev_token = Some(Instant::now());
+    // Drop empty deltas (role-announcement events).
+    match content {
+        Some(s) if !s.is_empty() => {}
+        _ => return,
     }
+    if ttft.is_none() {
+        *ttft = Some(prefill_start.elapsed());
+    } else if let Some(prev_time) = *prev_token {
+        itl.push(prev_time.elapsed());
+    }
+    *prev_token = Some(Instant::now());
 }
 
 /// Parse one SSE event payload into state and metrics.
@@ -193,13 +202,15 @@ pub async fn chat_completions(
     api_timeout: &Duration,
 ) -> Result<(), anyhow::Error> {
     if request.chat_completion.stream {
+        // Capture TTFT's start before sending, so it includes network + prefill.
+        let prefill_start = Instant::now();
         let response = send_streaming_request(client, &request, api_timeout).await?;
 
         if !response.status().is_success() {
             return Err(handle_error_response(response, metrics).await);
         }
 
-        let mut state = StreamState::new(request.chat_completion.max_tokens);
+        let mut state = StreamState::new(request.chat_completion.max_tokens, prefill_start);
 
         let stream = sse_stream(response);
         tokio::pin!(stream);
@@ -293,5 +304,87 @@ pub async fn check_endpoint(
                 "Endpoint check failed with status {status}: {error_text}"
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::{Duration, Instant};
+
+    #[test]
+    fn empty_content_does_not_set_ttft() {
+        // Servers commonly emit a first SSE event with role="assistant" and
+        // content="" -- a role announcement, not a real token. If we count it,
+        // ttft collapses to microseconds.
+        let prefill_start = Instant::now();
+        std::thread::sleep(Duration::from_millis(20));
+        let mut ttft: Option<Duration> = None;
+        let mut prev_token: Option<Instant> = None;
+        let mut itl: Vec<Duration> = Vec::new();
+
+        process_token_delta(
+            Some(""),
+            &mut ttft,
+            &mut prev_token,
+            &mut itl,
+            prefill_start,
+        );
+
+        assert!(
+            ttft.is_none(),
+            "empty content (role announcement) must not register TTFT, got {ttft:?}"
+        );
+        assert!(itl.is_empty(), "no ITL sample should be recorded yet");
+        assert!(
+            prev_token.is_none(),
+            "prev_token must not be bumped on empty content"
+        );
+    }
+
+    #[test]
+    fn non_empty_content_sets_ttft() {
+        // First real token should record ttft and prime prev_token for ITL.
+        let prefill_start = Instant::now();
+        std::thread::sleep(Duration::from_millis(20));
+        let mut ttft: Option<Duration> = None;
+        let mut prev_token: Option<Instant> = None;
+        let mut itl: Vec<Duration> = Vec::new();
+
+        process_token_delta(
+            Some("hi"),
+            &mut ttft,
+            &mut prev_token,
+            &mut itl,
+            prefill_start,
+        );
+
+        let observed = ttft.expect("first non-empty token must set ttft");
+        assert!(
+            observed >= Duration::from_millis(20),
+            "ttft should reflect the time since prefill_start, got {observed:?}"
+        );
+        assert!(prev_token.is_some(), "prev_token should be primed");
+    }
+
+    #[test]
+    fn prefill_start_is_passed_in_not_set_in_state() {
+        // StreamState::new must accept a prefill_start from the caller so that
+        // the timer captures network + server-side prefill, not just the body
+        // read. Previously the constructor captured Instant::now() *after*
+        // send_streaming_request() had already returned -- so TTFT silently
+        // measured microseconds (post-headers, pre-body) instead of seconds.
+        let outer_start = Instant::now();
+        std::thread::sleep(Duration::from_millis(15));
+        let state = StreamState::new(16, outer_start);
+        let later = Instant::now();
+        assert!(
+            state.prefill_start == outer_start,
+            "prefill_start must be the value passed in, not now()"
+        );
+        assert!(
+            state.prefill_start <= later,
+            "prefill_start should not be re-captured"
+        );
     }
 }
