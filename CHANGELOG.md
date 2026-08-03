@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-04
+
 ### Changed
 
 - `cache_hit_rate` no longer nulls the whole run when a turn omits `cached_tokens`. An unobserved turn is now skipped from the numerator but its re-sent history stays in the denominator, so it dilutes the ratio instead. An all-`None` run still reports `None` (distinct from observed `0.0`).
@@ -84,7 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Incremental metrics via an `mpsc` sender, allowing results to be streamed out of `run_session` as they arrive.
 
-[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/wheynelau/llmperf-rs/compare/v0.7.2...v0.8.0
+[0.7.2]: https://github.com/wheynelau/llmperf-rs/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/wheynelau/llmperf-rs/compare/v0.7.0-rc1...v0.7.1
 [0.7.0-rc1]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.3...v0.7.0-rc1
 [0.6.3]: https://github.com/wheynelau/llmperf-rs/compare/v0.6.2...v0.6.3
