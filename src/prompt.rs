@@ -3,7 +3,7 @@ use futures::Stream;
 use futures::stream::{self, StreamExt};
 use indicatif::ProgressBar;
 use log::warn;
-use rand::Rng;
+use rand::RngExt;
 use rand::seq::SliceRandom;
 use statrs::distribution::{ContinuousCDF, Normal};
 use std::collections::HashMap;

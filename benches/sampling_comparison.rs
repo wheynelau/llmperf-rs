@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use rand::Rng;
+use rand::RngExt;
 use rand::rng;
 use rand_distr::{Distribution, Normal};
 use statrs::distribution::{ContinuousCDF, Normal as StatrsNormal};
