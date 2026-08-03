@@ -78,7 +78,7 @@ jobs:
           chmod +x artifacts/amd64/llmperf
           chmod +x artifacts/arm64/llmperf
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
