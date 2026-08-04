@@ -1006,7 +1006,7 @@ async fn test_chat_completions_user_headers_reach_server() {
 }
 
 #[tokio::test]
-async fn test_insert_summary_persists_cache_hit_rate() {
+async fn test_summary_cache_hit_rate_serializes() {
     let mut builder = SummaryBuilder::new();
     builder
         .args(Cli {

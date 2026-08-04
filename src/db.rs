@@ -139,7 +139,7 @@ pub async fn insert_summary(pool: &PgPool, summary: &SummaryMetrics) -> Result<(
     // LLM generated
     // Proc-macro sees unexpanded declarative macros as single tokens.
     // Nested macro_rules! don't work inside sqlx::query!() -
-    // all 91 parameters must be explicit.
+    // all 92 parameters must be explicit.
     // Would appreciate if anyone has a neater way to do this
     sqlx::query!(
         r#"
