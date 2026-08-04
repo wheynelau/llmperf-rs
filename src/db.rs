@@ -104,7 +104,8 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
     output_tokens_p75              DOUBLE PRECISION NOT NULL,
     output_tokens_p90              DOUBLE PRECISION NOT NULL,
     output_tokens_p95              DOUBLE PRECISION NOT NULL,
-    output_tokens_p99              DOUBLE PRECISION NOT NULL
+    output_tokens_p99              DOUBLE PRECISION NOT NULL,
+    cache_hit_rate                 DOUBLE PRECISION
 )";
 
 // Design choice: Hybrid can help to clean up the columns
@@ -112,6 +113,11 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
 // or something similar
 pub async fn ensure_table(pool: &PgPool) -> Result<()> {
     sqlx::query(BENCHMARK_RESULTS_DDL).execute(pool).await?;
+    sqlx::query(
+        "ALTER TABLE benchmark_results ADD COLUMN IF NOT EXISTS cache_hit_rate DOUBLE PRECISION",
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

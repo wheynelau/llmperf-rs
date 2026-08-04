@@ -312,9 +312,11 @@ mod tests {
     #[test]
     fn test_cache_hit_rate_keeps_none_turns_in_denominator() {
         use crate::args::Cli;
-        let mut args = Cli::default();
         // multi_turn=3 means turn indices 0 and 1 are re-sent (cacheable), turn 2 is last.
-        args.multi_turn = 3;
+        let args = Cli {
+            multi_turn: 3,
+            ..Cli::default()
+        };
 
         let mut builder = SummaryBuilder::new();
         builder.args(args);
@@ -349,9 +351,11 @@ mod tests {
     #[test]
     fn test_cache_hit_rate_none_when_no_cacheable_history() {
         use crate::args::Cli;
-        let mut args = Cli::default();
         // Single-turn mode: no turn is re-sent, so nothing is cacheable.
-        args.multi_turn = 1;
+        let args = Cli {
+            multi_turn: 1,
+            ..Cli::default()
+        };
 
         let mut builder = SummaryBuilder::new();
         builder.args(args);

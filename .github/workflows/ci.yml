@@ -19,7 +19,7 @@ jobs:
           key: hf-cache-v1
       - run: cargo fmt --check
       - run: cargo check
-      - run: cargo clippy --all-features -- -D warnings -W clippy::perf
+      - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
         env:
           HF_HOME: ${{ github.workspace }}/.hf-cache
