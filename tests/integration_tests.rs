@@ -1,10 +1,10 @@
+use llmperf::api::chat;
+use llmperf::api::models::{ChatCompletionRequest, FinishReason, Message, Request};
+use llmperf::metrics::models::Metrics;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use token_benchmark::api::chat;
-use token_benchmark::api::models::{ChatCompletionRequest, FinishReason, Message, Request};
-use token_benchmark::metrics::models::Metrics;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 

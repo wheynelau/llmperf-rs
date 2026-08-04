@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-04
+
+### Changed
+
+- Renamed the library crate from `token_benchmark` to `llmperf`, matching the package and tool name.
+- The summary now includes metrics from turns interrupted by a hard timeout, instead of dropping partial-turn metrics that reached the file saver but not the aggregate. The run loop is the single consumer of the per-turn metrics channel and drives both summary accumulation and file persistence.
+
 ## [0.8.0] - 2026-08-04
 
 ### Changed
@@ -86,7 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Incremental metrics via an `mpsc` sender, allowing results to be streamed out of `run_session` as they arrive.
 
-[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/wheynelau/llmperf-rs/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/wheynelau/llmperf-rs/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/wheynelau/llmperf-rs/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/wheynelau/llmperf-rs/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/wheynelau/llmperf-rs/compare/v0.7.0-rc1...v0.7.1

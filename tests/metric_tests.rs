@@ -1,6 +1,6 @@
+use llmperf::{api::models::FinishReason, args::Cli, metrics};
 use statrs::statistics::{Data, Distribution};
 use std::time::Duration;
-use token_benchmark::{api::models::FinishReason, args::Cli, metrics};
 
 #[test]
 fn test_metrics_integration_wo_null() {

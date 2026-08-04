@@ -1,5 +1,5 @@
-use token_benchmark::file::load_tokenizer;
-use token_benchmark::prompt::{self, create_prompt, randomly_sample_sonnet_lines_prompt};
+use llmperf::file::load_tokenizer;
+use llmperf::prompt::{self, create_prompt, randomly_sample_sonnet_lines_prompt};
 
 #[test]
 fn create_prompt_functional() {

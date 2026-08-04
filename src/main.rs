@@ -1,37 +1,22 @@
 use anyhow::Result;
 use futures::StreamExt;
 use log::{info, warn};
+use std::sync::Once;
+use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant, timeout};
 
 // Import modules from lib.rs
-use token_benchmark::config;
-use token_benchmark::metrics;
-use token_benchmark::prompt;
-
-async fn process_stream(
-    stream: &mut (impl StreamExt<Item = Vec<metrics::Metrics>> + Unpin),
-    completed_tasks: &mut u32,
-    failed_tasks: &mut u32,
-    collected_metrics: &mut Vec<metrics::Metrics>,
-) {
-    while let Some(metrics_list) = stream.next().await {
-        for mut metrics in metrics_list {
-            // Track failures based on error_msg in metrics
-            if metrics.error_msg.is_some() {
-                *failed_tasks += 1;
-            } else {
-                *completed_tasks += 1;
-            }
-            metrics.content = None;
-            metrics.reasoning = None;
-            collected_metrics.push(metrics);
-        }
-    }
-}
+use llmperf::config;
+use llmperf::metrics;
+use llmperf::prompt;
 
 #[tokio::main]
 #[allow(clippy::too_many_lines)]
 async fn main() -> Result<()> {
+    // Log one warning if forwarding a metric to the saver fails; sends stay
+    // non-fatal. Declared first so clippy doesn't flag items-after-statements.
+    static SAVER_SEND_WARNED: Once = Once::new();
+
     env_logger::init();
 
     let app_config = config::load_configuration().await?;
@@ -54,36 +39,91 @@ async fn main() -> Result<()> {
         .enable_steady_tick(Duration::from_millis(40));
 
     let task_stream = prompt::create_task_stream(&app_config)?;
-    let mut stream = task_stream.stream;
+    let stream = task_stream.stream;
 
-    // Clone cli_config for later use after stream is done
     let cli_config = app_config.cli_config.clone();
-
     let time = Instant::now();
 
-    // Process the stream with timeout and track progress
     let mut completed_tasks = 0u32;
     let mut failed_tasks = 0u32;
     let mut collected_metrics = Vec::new();
 
-    let (sender, receiver) = (task_stream.sender, task_stream.receiver);
+    // Separate channel the loop forwards each metric to so the file saver (a
+    // distinct consumer) sees exactly the same metrics as the summary.
+    let (saver_tx, saver_rx) = mpsc::unbounded_channel::<metrics::Metrics>();
 
-    // Set up channel and saver only if results_dir is specified
+    // Spawn the incremental file writer (reuses existing ResultsSaver logic).
     let saver_handle = if let Some(ref results_saver) = app_config.results_saver {
-        token_benchmark::file::setup_streaming_saver(results_saver, receiver)
+        let jsonl_path = results_saver.individual_responses_path.clone();
+        let saver = results_saver.clone();
+        Some(tokio::spawn(async move {
+            saver
+                .save_metrics_jsonl_from_channel(saver_rx, &jsonl_path)
+                .await
+        }))
     } else {
         None
     };
 
-    drop(sender);
+    let mut receiver = task_stream.receiver;
 
-    // Process stream with optional timeout
-    let process = process_stream(
-        &mut stream,
-        &mut completed_tasks,
-        &mut failed_tasks,
-        &mut collected_metrics,
-    );
+    // Drop the main-thread sender so the channel closes once every session
+    // sender drops, letting `receiver.recv()` return None and the loop end.
+    drop(task_stream.sender);
+
+    // `stream` is a local impl Stream + already Unpin (TaskStream::stream), so
+    // pin it once and poll it in select so the session futures keep sending into
+    // the channel. The receiver closes when every session sender drops.
+    let process = async {
+        tokio::pin!(stream);
+
+        // Shared by both arms so every metric is: (1) counted, (2) shoved into
+        // `collected_metrics` stripped (content/reasoning = None) for the
+        // summary, and (3) forwarded ORIGINAL to `saver_tx` so the
+        // individual-responses file keeps the full data.
+        let mut handle_metric = |metric: metrics::Metrics| {
+            if metric.error_msg.is_some() {
+                failed_tasks += 1;
+            } else {
+                completed_tasks += 1;
+            }
+
+            let mut lean = metric.clone();
+            lean.content = None;
+            lean.reasoning = None;
+            collected_metrics.push(lean);
+
+            if saver_tx.send(metric).is_err() {
+                SAVER_SEND_WARNED.call_once(|| {
+                    warn!(
+                        "Failed to forward a metric to the results saver; \
+                         the saver may not be active"
+                    );
+                });
+            }
+        };
+
+        loop {
+            tokio::select! {
+                stream_item = stream.next() => {
+                    // Stream ended: drain any buffered metrics, then stop.
+                    if stream_item.is_none() {
+                        while let Some(metric) = receiver.recv().await {
+                            handle_metric(metric);
+                        }
+                        break;
+                    }
+                    // `Some(Vec<Metrics>)` — the per-session bundle. Intentionally
+                    // discarded: metrics already flowed one-by-one via the
+                    // channel. Single delivery path; do NOT forward it again.
+                }
+                maybe_metric = receiver.recv() => {
+                    let Some(metric) = maybe_metric else { break; };
+                    handle_metric(metric);
+                }
+            }
+        }
+    };
 
     let timed_out = if app_config.cli_config.timeout == 0 {
         process.await;
@@ -92,6 +132,10 @@ async fn main() -> Result<()> {
         let timeout_duration = Duration::from_secs(app_config.cli_config.timeout);
         timeout(timeout_duration, process).await.is_err()
     };
+
+    // Close the file-writer channel now that the loop has ended so the saver
+    // flushes and finalizes the zstd file.
+    drop(saver_tx);
 
     if timed_out {
         app_config
@@ -124,11 +168,11 @@ async fn main() -> Result<()> {
         warn!("Failed tasks: {failed_tasks}");
     }
     info!("Total elapsed time: {elapsed:?}");
-    info!("Collected metrics from {} tasks", collected_metrics.len());
+    info!("Collected {} metrics", collected_metrics.len());
 
-    // Check if any tasks were completed
-    if completed_tasks == 0 {
-        warn!("No tasks completed successfully. Skipping summary generation and results saving.");
+    // Check if any metrics were collected
+    if collected_metrics.is_empty() {
+        warn!("No metrics were collected. Skipping summary generation and results saving.");
         return Ok(());
     }
 
@@ -144,8 +188,6 @@ async fn main() -> Result<()> {
 
     // Display summary metrics
     println!("{}", serde_json::to_string_pretty(&summary)?);
-
-    drop(stream);
 
     // Wait for the streaming saver to complete and log any errors
     if let Some(handle) = saver_handle {
@@ -171,7 +213,7 @@ async fn main() -> Result<()> {
 
     // Insert summary into database if db_pool is available
     if let Some(ref pool) = app_config.db_pool {
-        match token_benchmark::db::insert_summary(pool, &summary).await {
+        match llmperf::db::insert_summary(pool, &summary).await {
             Ok(()) => info!("Summary inserted into database."),
             Err(e) => warn!("Failed to insert summary into database: {e}"),
         }
