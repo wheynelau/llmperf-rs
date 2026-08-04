@@ -3,28 +3,27 @@ use token_benchmark::prompt::{self, create_prompt, randomly_sample_sonnet_lines_
 
 #[test]
 fn create_prompt_functional() {
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
     let tokenizer = load_tokenizer("hf-internal-testing/llama-tokenizer").unwrap();
 
-    let raw_lines = ["Hello world\n", "Test line\n", "Another line\n"];
+    let lines = prompt::parse_sonnet_text(&tokenizer, prompt::SONNET_TEXT).unwrap();
 
-    let lines: Vec<tokenizers::Encoding> = raw_lines
-        .iter()
-        .map(|line| tokenizer.encode_fast(*line, false).unwrap())
-        .collect();
-
-    let prompt = tokenizer.encode_fast("Prompt here:", false).unwrap();
+    let prompt = tokenizer.encode_fast(prompt::PROMPT_TEXT, false).unwrap();
     let prompt_ids = prompt.get_ids();
-    let prompt_len = prompt.len();
 
-    // noticed that there was a chance of failture, need to monitor, else increase range
-    for target_token in (5..100).step_by(1) {
-        let remaining_prompt_tokens = target_token - prompt_len;
-        let result_ids = create_prompt(prompt_ids, &lines, remaining_prompt_tokens as u32);
-        let prompt = tokenizer.decode(&result_ids, false).unwrap();
-        let output_tokens = result_ids.len() as u32;
-        let actual_tokens = tokenizer.encode_fast(prompt.as_str(), false).unwrap().len();
-
-        assert_eq!(actual_tokens as u32, output_tokens);
+    let mut rng = StdRng::seed_from_u64(42);
+    for remaining_prompt_tokens in (100..5000).step_by(100) {
+        let result_ids = create_prompt(prompt_ids, &lines, remaining_prompt_tokens, &mut rng);
+        let actual_tokens = tokenizer
+            .encode_fast(
+                tokenizer.decode(&result_ids, false).unwrap().as_str(),
+                false,
+            )
+            .unwrap()
+            .len() as u32;
+        let target_token = remaining_prompt_tokens + prompt.len() as u32;
         let diff = (actual_tokens as i64 - target_token as i64).abs();
         assert!(diff <= 1, "expected {target_token} got {actual_tokens}");
     }
