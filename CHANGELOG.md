@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-04
+
+### Added
+
+- `cache_hit_rate` is now persisted to the Postgres `benchmark_results` table as a nullable `DOUBLE PRECISION` column, so existing databases are auto-migrated via an idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` on connect.
+
+### Changed
+
+- CI now runs `cargo clippy --all-targets -- -D warnings`, matching the local pre-commit hook so test and example code is linted consistently.
+
 ## [0.9.0] - 2026-08-04
 
 ### Changed
