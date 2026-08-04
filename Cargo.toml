@@ -1,6 +1,6 @@
 [package]
 name = "llmperf"
-version = "0.9.0"
+version = "0.9.1"
 edition = "2024"
 repository = "https://github.com/wheynelau/llmperf-rs"
 description = "A benchmarking tool for large language model (LLM) inference performance."
