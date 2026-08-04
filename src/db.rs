@@ -104,7 +104,8 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
     output_tokens_p75              DOUBLE PRECISION NOT NULL,
     output_tokens_p90              DOUBLE PRECISION NOT NULL,
     output_tokens_p95              DOUBLE PRECISION NOT NULL,
-    output_tokens_p99              DOUBLE PRECISION NOT NULL
+    output_tokens_p99              DOUBLE PRECISION NOT NULL,
+    cache_hit_rate                 DOUBLE PRECISION
 )";
 
 // Design choice: Hybrid can help to clean up the columns
@@ -112,6 +113,11 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
 // or something similar
 pub async fn ensure_table(pool: &PgPool) -> Result<()> {
     sqlx::query(BENCHMARK_RESULTS_DDL).execute(pool).await?;
+    sqlx::query(
+        "ALTER TABLE benchmark_results ADD COLUMN IF NOT EXISTS cache_hit_rate DOUBLE PRECISION",
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -133,7 +139,7 @@ pub async fn insert_summary(pool: &PgPool, summary: &SummaryMetrics) -> Result<(
     // LLM generated
     // Proc-macro sees unexpanded declarative macros as single tokens.
     // Nested macro_rules! don't work inside sqlx::query!() -
-    // all 91 parameters must be explicit.
+    // all 92 parameters must be explicit.
     // Would appreciate if anyone has a neater way to do this
     sqlx::query!(
         r#"
@@ -166,7 +172,8 @@ pub async fn insert_summary(pool: &PgPool, summary: &SummaryMetrics) -> Result<(
             output_tokens_mean, output_tokens_median, output_tokens_stddev,
             output_tokens_min, output_tokens_max,
             output_tokens_p25, output_tokens_p50, output_tokens_p75,
-            output_tokens_p90, output_tokens_p95, output_tokens_p99
+            output_tokens_p90, output_tokens_p95, output_tokens_p99,
+            cache_hit_rate
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
             $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
@@ -177,7 +184,8 @@ pub async fn insert_summary(pool: &PgPool, summary: &SummaryMetrics) -> Result<(
             $61, $62, $63, $64, $65, $66, $67, $68, $69, $70,
             $71, $72, $73, $74, $75, $76, $77, $78, $79, $80,
             $81, $82, $83, $84, $85, $86, $87, $88, $89, $90,
-            $91
+            $91,
+            $92
         )
         "#,
         summary.timestamp as i64,                     // $1
@@ -271,6 +279,7 @@ pub async fn insert_summary(pool: &PgPool, summary: &SummaryMetrics) -> Result<(
         summary.output_tokens.quantiles_p90,          // $89
         summary.output_tokens.quantiles_p95,          // $90
         summary.output_tokens.quantiles_p99,          // $91
+        summary.cache_hit_rate,                       // $92
     )
     .execute(pool)
     .await?;

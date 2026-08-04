@@ -1,6 +1,7 @@
 use llmperf::api::chat;
 use llmperf::api::models::{ChatCompletionRequest, FinishReason, Message, Request};
-use llmperf::metrics::models::Metrics;
+use llmperf::args::Cli;
+use llmperf::metrics::models::{Metrics, SummaryBuilder};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -1002,4 +1003,25 @@ async fn test_chat_completions_user_headers_reach_server() {
         result.is_ok(),
         "request with user-supplied header should succeed: {result:?}"
     );
+}
+
+#[tokio::test]
+async fn test_summary_cache_hit_rate_serializes() {
+    let mut builder = SummaryBuilder::new();
+    builder
+        .args(Cli {
+            multi_turn: 2,
+            ..Cli::default()
+        })
+        .add_metric(&Metrics {
+            number_total_tokens: 200,
+            cached_tokens: Some(100),
+            turn_index: 0,
+            ..Metrics::default()
+        });
+    let summary = builder.build();
+    assert_eq!(summary.cache_hit_rate, Some(0.5));
+
+    let value = serde_json::to_value(&summary).unwrap();
+    assert_eq!(value["cache_hit_rate"], json!(0.5));
 }
