@@ -6,9 +6,9 @@ use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant, timeout};
 
 // Import modules from lib.rs
-use token_benchmark::config;
-use token_benchmark::metrics;
-use token_benchmark::prompt;
+use llmperf::config;
+use llmperf::metrics;
+use llmperf::prompt;
 
 #[tokio::main]
 #[allow(clippy::too_many_lines)]
@@ -213,7 +213,7 @@ async fn main() -> Result<()> {
 
     // Insert summary into database if db_pool is available
     if let Some(ref pool) = app_config.db_pool {
-        match token_benchmark::db::insert_summary(pool, &summary).await {
+        match llmperf::db::insert_summary(pool, &summary).await {
             Ok(()) => info!("Summary inserted into database."),
             Err(e) => warn!("Failed to insert summary into database: {e}"),
         }

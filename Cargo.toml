@@ -1,13 +1,13 @@
 [package]
 name = "llmperf"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 repository = "https://github.com/wheynelau/llmperf-rs"
 description = "A benchmarking tool for large language model (LLM) inference performance."
 build = "build.rs"
 
 [lib]
-name = "token_benchmark"
+name = "llmperf"
 path = "src/lib.rs"
 
 [dependencies]
